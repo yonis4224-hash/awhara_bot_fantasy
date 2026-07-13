@@ -1,9 +1,27 @@
 import os
+import threading
+from http.server import BaseHTTPRequestHandler, HTTPServer
 import discord
 from discord.ext import commands
 import db
 import engine
 import game_data
+
+
+class _HealthHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"Ohara bot is running")
+
+    def log_message(self, *args):
+        pass
+
+
+def _start_web_server():
+    port = int(os.getenv("PORT", "10000"))
+    server = HTTPServer(("0.0.0.0", port), _HealthHandler)
+    server.serve_forever()
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -325,4 +343,5 @@ async def help_cmd(ctx):
         "`!تحدي @خصم` | `!مباراتي` | `!جاهز <رقم>`\n"
         "`!نصائح` - نصائح اللعب")
 
+threading.Thread(target=_start_web_server, daemon=True).start()
 bot.run(TOKEN)
