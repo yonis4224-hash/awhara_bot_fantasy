@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="flat-bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#667eea"/>
+      <stop offset="100%" style="stop-color:#764ba2"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background circle -->
+  <circle cx="256" cy="256" r="256" fill="url(#flat-bg)"/>
+
+  <!-- Inner circle -->
+  <circle cx="256" cy="256" r="220" fill="#fff" opacity="0.1"/>
+
+  <!-- Football base -->
+  <circle cx="256" cy="230" r="100" fill="#fff"/>
+  
+  <!-- Pentagon -->
+  <path d="M256 155 L215 185 L228 230 L284 230 L297 185 Z" fill="#333"/>
+  
+  <!-- Connected edges -->
+  <path d="M256 155 L297 185 L320 160" fill="none" stroke="#ddd" stroke-width="3"/>
+  <path d="M297 185 L284 230 L310 240" fill="none" stroke="#ddd" stroke-width="3"/>
+  <path d="M284 230 L256 265 L215 185" fill="none" stroke="#ddd" stroke-width="3"/>
+  <path d="M215 185 L192 160 L256 155" fill="none" stroke="#ddd" stroke-width="3"/>
+  <path d="M215 185 L228 230 L200 240" fill="none" stroke="#ddd" stroke-width="3"/>
+  
+  <!-- Extra pentagon pieces -->
+  <path d="M320 160 L345 185 L310 240" fill="#333"/>
+  <path d="M192 160 L167 185 L200 240" fill="#333"/>
+  <path d="M200 240 L228 230 L256 265 L284 230 L310 240" fill="#333"/>
+
+  <!-- Text -->
+  <text x="256" y="380" text-anchor="middle" font-family="Arial, sans-serif" font-size="72" font-weight="bold" fill="#fff">أوهارا</text>
+  <text x="256" y="420" text-anchor="middle" font-family="Arial, sans-serif" font-size="30" fill="#fff" opacity="0.7">المدرب الأفضل</text>
+  
+  <!-- Stars -->
+  <polygon points="256,445 261,460 276,460 264,469 268,484 256,475 244,484 248,469 236,460 251,460" fill="#fff" opacity="0.5"/>
+</svg>

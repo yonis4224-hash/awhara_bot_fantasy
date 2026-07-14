@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bga" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#1a1a2e"/>
+      <stop offset="100%" style="stop-color:#0f3460"/>
+    </linearGradient>
+    <linearGradient id="golda" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#f5c842"/>
+      <stop offset="100%" style="stop-color:#e6a817"/>
+    </linearGradient>
+    <linearGradient id="shielda" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#e94560"/>
+      <stop offset="100%" style="stop-color:#c81e45"/>
+    </linearGradient>
+    <filter id="shadowa">
+      <feDropShadow dx="0" dy="3" stdDeviation="6" flood-color="#000" flood-opacity="0.5"/>
+    </filter>
+    <clipPath id="round">
+      <rect width="512" height="512" rx="80" ry="80"/>
+    </clipPath>
+  </defs>
+
+  <g clip-path="url(#round)">
+    <!-- Background -->
+    <rect width="512" height="512" fill="url(#bga)"/>
+
+    <!-- Radial glow -->
+    <circle cx="256" cy="256" r="200" fill="#e94560" opacity="0.08"/>
+
+    <!-- Shield -->
+    <path d="M256 40 L420 110 L420 290 Q420 410 256 470 Q92 410 92 290 L92 110 Z" 
+          fill="url(#shielda)" stroke="url(#golda)" stroke-width="5" filter="url(#shadowa)"/>
+
+    <!-- Inner shield -->
+    <path d="M256 65 L400 128 L400 285 Q400 395 256 450 Q112 395 112 285 L112 128 Z" 
+          fill="none" stroke="url(#golda)" stroke-width="2" opacity="0.5"/>
+
+    <!-- Football -->
+    <circle cx="256" cy="195" r="70" fill="#fff" stroke="#444" stroke-width="4"/>
+    
+    <!-- Pentagon pattern -->
+    <path d="M256 135 L220 165 L232 205 L280 205 L292 165 Z" fill="#333" stroke="#333" stroke-width="1"/>
+    <path d="M256 135 L292 165 L310 145" fill="none" stroke="#444" stroke-width="2"/>
+    <path d="M292 165 L310 145 L325 175" fill="#333" stroke="#333" stroke-width="1"/>
+    <path d="M292 165 L280 205 L310 210" fill="#333" stroke="#333" stroke-width="1"/>
+    <path d="M232 205 L220 165 L195 170" fill="#333" stroke="#333" stroke-width="1"/>
+    <path d="M232 205 L280 205 L265 235" fill="#333" stroke="#333" stroke-width="1"/>
+    <path d="M220 165 L195 170 L210 140" fill="#333" stroke="#333" stroke-width="1"/>
+
+    <!-- Star on top -->
+    <polygon points="256,50 262,68 280,68 266,80 271,98 256,88 241,98 246,80 232,68 250,68" 
+             fill="url(#golda)" filter="url(#shadowa)"/>
+
+    <!-- Side stars -->
+    <polygon points="130,90 134,100 144,100 136,106 139,116 130,110 121,116 124,106 116,100 126,100" fill="url(#golda)" opacity="0.8"/>
+    <polygon points="382,90 386,100 396,100 388,106 391,116 382,110 373,116 376,106 368,100 378,100" fill="url(#golda)" opacity="0.8"/>
+
+    <!-- Text -->
+    <text x="256" y="340" text-anchor="middle" font-family="Arial, sans-serif" font-size="52" font-weight="bold" fill="url(#golda)" filter="url(#shadowa)">أوهارا</text>
+    <text x="256" y="380" text-anchor="middle" font-family="Arial, sans-serif" font-size="24" fill="#ccc">المدرب الأفضل</text>
+  </g>
+</svg>

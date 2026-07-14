@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">
+  <defs>
+    <linearGradient id="bg2" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#1a1a2e"/>
+      <stop offset="100%" style="stop-color:#16213e"/>
+    </linearGradient>
+    <linearGradient id="gold2" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#f5c842"/>
+      <stop offset="100%" style="stop-color:#e6a817"/>
+    </linearGradient>
+    <linearGradient id="shield2" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#e94560"/>
+      <stop offset="100%" style="stop-color:#c81e45"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="200" height="200" rx="40" fill="url(#bg2)"/>
+  <rect x="5" y="5" width="190" height="190" rx="35" fill="none" stroke="url(#gold2)" stroke-width="2"/>
+
+  <!-- Shield -->
+  <path d="M100 20 L160 50 L160 110 Q160 155 100 175 Q40 155 40 110 L40 50 Z" 
+        fill="url(#shield2)" stroke="url(#gold2)" stroke-width="3"/>
+
+  <!-- Football -->
+  <circle cx="100" cy="85" r="28" fill="#fff" stroke="#333" stroke-width="2"/>
+  <path d="M100 57 Q112 72 120 67 Q126 78 128 85 Q120 93 120 103 Q112 108 100 113 Q88 108 80 103 Q80 93 72 85 Q74 78 80 67 Q88 72 100 57" 
+        fill="none" stroke="#333" stroke-width="1.2"/>
+
+  <!-- Star -->
+  <polygon points="100,28 103,37 112,37 105,43 107,52 100,47 93,52 95,43 88,37 97,37" fill="url(#gold2)"/>
+
+  <!-- Letter O -->
+  <text x="100" y="155" text-anchor="middle" font-family="Arial, sans-serif" font-size="28" font-weight="bold" fill="url(#gold2)">O</text>
+</svg>

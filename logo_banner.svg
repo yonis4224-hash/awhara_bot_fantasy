@@ -1,0 +1,70 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 300" width="800" height="300">
+  <defs>
+    <linearGradient id="bgb" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#1a1a2e"/>
+      <stop offset="50%" style="stop-color:#16213e"/>
+      <stop offset="100%" style="stop-color:#0f3460"/>
+    </linearGradient>
+    <linearGradient id="goldb" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#f5c842"/>
+      <stop offset="100%" style="stop-color:#e6a817"/>
+    </linearGradient>
+    <linearGradient id="shieldb" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#e94560"/>
+      <stop offset="100%" style="stop-color:#c81e45"/>
+    </linearGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="800" height="300" fill="url(#bgb)"/>
+  
+  <!-- Decorative lines -->
+  <line x1="0" y1="10" x2="800" y2="10" stroke="url(#goldb)" stroke-width="1" opacity="0.3"/>
+  <line x1="0" y1="290" x2="800" y2="290" stroke="url(#goldb)" stroke-width="1" opacity="0.3"/>
+  
+  <!-- Diagonal decorations -->
+  <line x1="0" y1="50" x2="150" y2="0" stroke="url(#goldb)" stroke-width="1" opacity="0.2"/>
+  <line x1="650" y1="300" x2="800" y2="250" stroke="url(#goldb)" stroke-width="1" opacity="0.2"/>
+
+  <!-- Shield -->
+  <path d="M120 30 L210 65 L210 180 Q210 250 120 275 Q30 250 30 180 L30 65 Z" 
+        fill="url(#shieldb)" stroke="url(#goldb)" stroke-width="4"/>
+  
+  <!-- Football -->
+  <circle cx="120" cy="130" r="45" fill="#fff" stroke="#333" stroke-width="3"/>
+  <path d="M120 85 Q140 105 155 97 Q167 112 170 130 Q157 142 155 157 Q140 167 120 175 Q100 167 85 157 Q83 142 70 130 Q73 112 85 97 Q100 105 120 85" 
+        fill="none" stroke="#333" stroke-width="2"/>
+  
+  <!-- Star -->
+  <polygon points="120,45 125,60 140,60 128,70 132,85 120,75 108,85 112,70 100,60 115,60" fill="url(#goldb)" filter="url(#glow)"/>
+
+  <!-- Main text -->
+  <text x="400" y="120" text-anchor="middle" font-family="Arial, sans-serif" font-size="60" font-weight="bold" fill="url(#goldb)" filter="url(#glow)">أوهارا</text>
+  <text x="400" y="170" text-anchor="middle" font-family="Arial, sans-serif" font-size="36" fill="#e94560" filter="url(#glow)">المدرب الأفضل</text>
+  
+  <!-- Decorative line under text -->
+  <line x1="280" y1="185" x2="520" y2="185" stroke="url(#goldb)" stroke-width="2" opacity="0.5"/>
+  
+  <!-- Subtitle -->
+  <text x="400" y="215" text-anchor="middle" font-family="Arial, sans-serif" font-size="18" fill="#aaa">Football Manager Simulation</text>
+
+  <!-- Trophy left -->
+  <path d="M280 240 L280 265 Q280 275 290 275 L310 275 Q320 275 320 265 L320 240" 
+        fill="none" stroke="url(#goldb)" stroke-width="3" stroke-linecap="round"/>
+  <path d="M270 240 Q270 225 285 225 L315 225 Q330 225 330 240" 
+        fill="none" stroke="url(#goldb)" stroke-width="3" stroke-linecap="round"/>
+
+  <!-- Trophy right -->
+  <path d="M480 240 L480 265 Q480 275 490 275 L510 275 Q520 275 520 265 L520 240" 
+        fill="none" stroke="url(#goldb)" stroke-width="3" stroke-linecap="round"/>
+  <path d="M470 240 Q470 225 485 225 L515 225 Q530 225 530 240" 
+        fill="none" stroke="url(#goldb)" stroke-width="3" stroke-linecap="round"/>
+
+  <!-- Stars decoration -->
+  <polygon points="350,255 353,264 362,264 355,270 357,279 350,274 343,279 345,270 338,264 347,264" fill="url(#goldb)" opacity="0.6"/>
+  <polygon points="450,255 453,264 462,264 455,270 457,279 450,274 443,279 445,270 438,264 447,264" fill="url(#goldb)" opacity="0.6"/>
+</svg>
