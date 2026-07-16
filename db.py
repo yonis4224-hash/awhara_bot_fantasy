@@ -2,6 +2,7 @@ import sqlite3
 import json
 import os
 import game_data
+import market_data
 
 DB_PATH = os.getenv("DB_PATH", "ohara.db")
 CONN = sqlite3.connect(DB_PATH, check_same_thread=False)
@@ -34,7 +35,9 @@ def init_db():
         position TEXT,
         rating INTEGER,
         price INTEGER,
-        team_id INTEGER
+        team_id INTEGER,
+        club_id INTEGER DEFAULT 0,
+        league_id INTEGER DEFAULT 0
     )""")
     c.execute("""
     CREATE TABLE IF NOT EXISTS leagues (
@@ -53,12 +56,71 @@ def init_db():
         challenger_ready INTEGER DEFAULT 0,
         opponent_ready INTEGER DEFAULT 0
     )""")
+    c.execute("""
+    CREATE TABLE IF NOT EXISTS player_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        player_id INTEGER,
+        event TEXT,
+        amount INTEGER DEFAULT 0,
+        from_id TEXT DEFAULT '',
+        to_id TEXT DEFAULT '',
+        time TEXT DEFAULT CURRENT_TIMESTAMP
+    )""")
+    c.execute("""
+    CREATE TABLE IF NOT EXISTS offers (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        player_id INTEGER,
+        buyer_id TEXT,
+        amount INTEGER,
+        status TEXT DEFAULT 'pending',
+        time TEXT DEFAULT CURRENT_TIMESTAMP
+    )""")
     c.execute("SELECT COUNT(*) FROM players")
     if c.fetchone()[0] == 0:
-        for name, pos, rating, price in game_data.PLAYERS:
-            c.execute("INSERT INTO players (name, position, rating, price, team_id) VALUES (?,?,?,?,NULL)",
-                      (name, pos, rating, price))
+        for p in market_data.PLAYERS:
+            c.execute("INSERT INTO players (id, name, position, rating, price, team_id, club_id, league_id) "
+                      "VALUES (?,?,?,?,?,NULL,?,?)",
+                      (p["id"], p["name"], p["position"], p["rating"], p["price"], p["club_id"], p["league_id"]))
     CONN.commit()
+
+def add_history(player_id, event, amount=0, from_id="", to_id=""):
+    c = CONN.cursor()
+    c.execute("INSERT INTO player_history (player_id, event, amount, from_id, to_id) VALUES (?,?,?,?,?)",
+              (player_id, event, amount, from_id, to_id))
+    CONN.commit()
+
+def get_history(player_id):
+    c = CONN.cursor()
+    c.execute("SELECT * FROM player_history WHERE player_id=? ORDER BY time DESC LIMIT 20", (player_id,))
+    return c.fetchall()
+
+def get_leagues_list():
+    return market_data.LEAGUES
+
+def get_clubs_by_league(league_id):
+    return [c for c in market_data.CLUBS if c["league_id"] == league_id]
+
+def get_club(club_id):
+    for c in market_data.CLUBS:
+        if c["id"] == club_id:
+            return c
+    return None
+
+def get_league(league_id):
+    for l in market_data.LEAGUES:
+        if l["id"] == league_id:
+            return l
+    return None
+
+def get_market_players_by_club(club_id):
+    c = CONN.cursor()
+    c.execute("SELECT * FROM players WHERE club_id=? AND team_id IS NULL ORDER BY rating DESC", (club_id,))
+    return c.fetchall()
+
+def get_market_players_by_league(league_id):
+    c = CONN.cursor()
+    c.execute("SELECT * FROM players WHERE league_id=? AND team_id IS NULL ORDER BY rating DESC", (league_id,))
+    return c.fetchall()
 
 def get_coach(discord_id):
     c = CONN.cursor()
@@ -76,7 +138,13 @@ def create_team(name, owner_id):
     c.execute("INSERT INTO teams (name, owner_id, budget, xp) VALUES (?,?,?,?)",
               (name, owner_id, game_data.CONFIG["START_BUDGET"], game_data.CONFIG["START_XP"]))
     CONN.commit()
-    return c.lastrowid
+    tid = c.lastrowid
+    available = c.execute("SELECT id FROM players WHERE team_id IS NULL ORDER BY RANDOM() LIMIT 11").fetchall()
+    for row in available:
+        c.execute("UPDATE players SET team_id=? WHERE id=?", (tid, row["id"]))
+        add_history(row["id"], "تعاقد", 0, owner_id, str(tid))
+    CONN.commit()
+    return tid
 
 def get_team(team_id):
     c = CONN.cursor()
@@ -111,23 +179,47 @@ def team_players(team_id):
     c.execute("SELECT * FROM players WHERE team_id=? ORDER BY rating DESC", (team_id,))
     return c.fetchall()
 
-def buy_player(pid, team_id, price):
+def buy_player(pid, team_id, price, buyer_id=""):
     c = CONN.cursor()
+    p = c.execute("SELECT * FROM players WHERE id=?", (pid,)).fetchone()
     c.execute("UPDATE players SET team_id=? WHERE id=?", (team_id, pid))
     c.execute("UPDATE teams SET budget=budget-? WHERE id=?", (price, team_id))
+    add_history(pid, "شراء", price, buyer_id, str(team_id))
     CONN.commit()
 
-def sell_player(pid, price):
+def sell_player(pid, price, seller_id=""):
     c = CONN.cursor()
     c.execute("UPDATE players SET team_id=NULL WHERE id=?", (pid,))
     c.execute("UPDATE teams SET budget=budget+? WHERE id=(SELECT team_id FROM players WHERE id=?)",
               (price, pid))
+    add_history(pid, "بيع", price, seller_id, "")
+    CONN.commit()
+
+def release_player(pid):
+    c = CONN.cursor()
+    c.execute("UPDATE players SET team_id=NULL WHERE id=?", (pid,))
+    add_history(pid, "طرد")
     CONN.commit()
 
 def develop_player(pid, new_rating, new_price):
     c = CONN.cursor()
     c.execute("UPDATE players SET rating=?, price=? WHERE id=?", (new_rating, new_price, pid))
     CONN.commit()
+
+def resign(discord_id):
+    c = CONN.cursor()
+    c.execute("SELECT team_id FROM coaches WHERE discord_id=?", (discord_id,))
+    row = c.fetchone()
+    if not row or not row["team_id"]:
+        return False
+    team_id = row["team_id"]
+    c.execute("UPDATE players SET team_id=NULL WHERE team_id=?", (team_id,))
+    c.execute("DELETE FROM pending_matches WHERE challenger_id=? OR opponent_id=?",
+              (discord_id, discord_id))
+    c.execute("DELETE FROM teams WHERE id=?", (team_id,))
+    c.execute("DELETE FROM coaches WHERE discord_id=?", (discord_id,))
+    CONN.commit()
+    return True
 
 def get_leagues():
     c = CONN.cursor()

@@ -11,6 +11,7 @@ from discord import app_commands
 import db
 import engine
 import game_data
+import views
 
 
 # ---------------------------------------------------------------------------
@@ -48,6 +49,7 @@ bot = commands.Bot(
 TOKEN = os.getenv("DISCORD_TOKEN")
 
 POS_ARABIC = {"GK": "حارس", "DEF": "دفاع", "MID": "وسط", "ATT": "هجوم"}
+POS_EMOJI = {"GK": "🧤", "DEF": "🛡️", "MID": "🎽", "ATT": "⚽"}
 
 
 # ---------------------------------------------------------------------------
@@ -95,12 +97,36 @@ def team_embed(team, players):
 @bot.event
 async def on_ready():
     db.init_db()
+    await bot.change_presence(
+        activity=discord.Activity(type=discord.ActivityType.playing, name="⚽ أوهارا فانتزب")
+    )
     print(f"✅ أوهارا المدرب الأفضل جاهز: {bot.user}")
     try:
         synced = await bot.tree.sync()
         print(f"✅ Slash commands synced: {len(synced)}")
     except Exception as e:
         print(f"❌ Sync failed: {e}")
+
+
+@bot.event
+async def on_guild_join(guild):
+    embed = discord.Embed(
+        title="⚽ أهلاً بك في أوهارا فانتزب!",
+        description=(
+            "أقوى بوت لإدارة فرق كرة القدم في ديسكورد.\n\n"
+            "**البداية السريعة:**\n"
+            "1️⃣ اكتب `!انشاء <اسم فريقك>` لإنشاء فريقك\n"
+            "2️⃣ اكتب `!فريقي` لفتح لوحة التحكم بالأزرار\n"
+            "3️⃣ اكتب `!سوق` لتصفح اللاعبين بالدوريات والأنشية\n\n"
+            "اكتب `!مساعدة` لعرض كل الأوامر."
+        ),
+        color=discord.Color.green(),
+    )
+    embed.set_footer(text="أوهارا فانتزب — مدربك الرقمي الأفضل")
+    for ch in guild.text_channels:
+        if ch.permissions_for(guild.me).send_messages:
+            await ch.send(embed=embed)
+            break
 
 
 @bot.event
@@ -155,10 +181,11 @@ async def create_team(ctx, *, name):
 
     tid = db.create_team(name, str(ctx.author.id))
     db.create_coach(str(ctx.author.id), str(ctx.author), tid)
+    players = db.team_players(tid)
 
     embed = discord.Embed(
         title="✅ تم إنشاء الفريق!",
-        description=f"مرحباً بك في **{name}**!",
+        description=f"مرحباً بك في **{name}**! تم تعاقدك مع **{len(players)}** لاعبين تلقائياً.",
         color=discord.Color.green(),
     )
     embed.add_field(
@@ -171,7 +198,12 @@ async def create_team(ctx, *, name):
         value=f"{game_data.CONFIG['START_XP']} نقطة",
         inline=True,
     )
-    embed.set_footer(text="اكتب !سوق لرؤية اللاعبين المتاحين")
+    embed.add_field(
+        name="👥 اللاعبون",
+        value=f"{len(players)} لاعب في فريقك",
+        inline=True,
+    )
+    embed.set_footer(text="اكتب !فريقي لفتح لوحة التحكم بالأزرار | !سوق للسوق")
     await ctx.send(embed=embed)
 
 
@@ -187,38 +219,23 @@ async def my_team(ctx):
         )
         await ctx.send(embed=embed)
         return
-    await ctx.send(embed=team_embed(team, players))
+    await ctx.send(embed=views.team_embed(team, players), view=views.TeamPanel(ctx.author.id))
 
 
 # ---------------------------------------------------------------------------
 # MARKET commands
 # ---------------------------------------------------------------------------
-@bot.command(name="سوق", description="عرض اللاعبين المتاحين للشراء")
+@bot.command(name="سوق", description="فتح سوق الانتقالات بالقوائم")
 @commands.cooldown(1, 5, commands.BucketType.user)
 async def market(ctx):
-    players = db.market_players()
-    if not players:
-        embed = discord.Embed(
-            title="🛒 السوق فارغ!",
-            description="لا يوجد لاعبين متاحين حالياً.",
-            color=discord.Color.orange(),
-        )
-        await ctx.send(embed=embed)
-        return
-
+    view = views.MarketView(ctx.author.id)
     embed = discord.Embed(
-        title="🛒 سوق اللاعبين 2026",
+        title="🛒 سوق الانتقالات",
+        description="اختر الدوري ثم النادي لعرض اللاعبين المتاحين.",
         color=discord.Color.blue(),
     )
-
-    lines = []
-    for p in players[:20]:
-        pos = POS_ARABIC.get(p["position"], p["position"])
-        lines.append(f"`{p['id']}` **{p['name']}** — {pos} | ريت {p['rating']} | {p['price']}م")
-
-    embed.description = "\n".join(lines)
-    embed.set_footer(text="للشراء: !اشتري <رقم> | للتفاصيل: !لاعب <رقم>")
-    await ctx.send(embed=embed)
+    embed.set_footer(text="استخدم الأزرار للتنقل — الصفحة تظهر لك فقط")
+    await ctx.send(embed=embed, view=view, ephemeral=True)
 
 
 @bot.command(name="اشتري", description="شراء لاعب من السوق")
@@ -253,7 +270,7 @@ async def buy(ctx, pid: int):
         await ctx.send(embed=embed)
         return
 
-    db.buy_player(pid, team["id"], p["price"])
+    db.buy_player(pid, team["id"], p["price"], str(ctx.author.id))
 
     embed = discord.Embed(
         title="✅ تم الشراء!",
@@ -289,7 +306,7 @@ async def sell(ctx, pid: int):
         await ctx.send(embed=embed)
         return
 
-    db.sell_player(pid, p["price"])
+    db.sell_player(pid, p["price"], str(ctx.author.id))
 
     embed = discord.Embed(
         title="✅ تم البيع!",
@@ -317,17 +334,44 @@ async def player_info(ctx, pid: int):
         return
 
     pos = POS_ARABIC.get(p["position"], p["position"])
-    status = "في فريق" if p["team_id"] else "في السوق"
+    status = "في فريق ⚽" if p["team_id"] else "في السوق 🛒"
 
     embed = discord.Embed(
         title=f"📋 {p['name']}",
         color=discord.Color.blue(),
     )
-    embed.add_field(name="المركز", value=pos, inline=True)
+    embed.add_field(name="المركز", value=f"{POS_EMOJI.get(p['position'],'')} {pos}", inline=True)
     embed.add_field(name="الريت", value=str(p["rating"]), inline=True)
     embed.add_field(name="السعر", value=f"{p['price']}م", inline=True)
     embed.add_field(name="الحالة", value=status, inline=True)
+    if p["club_id"]:
+        club = db.get_club(p["club_id"])
+        if club:
+            embed.add_field(name="النادي", value=club["name"], inline=True)
     await ctx.send(embed=embed)
+
+
+@bot.command(name="سجل", description="عرض سجل تاريخ اللاعب")
+@commands.cooldown(1, 3, commands.BucketType.user)
+async def player_history(ctx, pid: int):
+    p = db.get_player(pid)
+    if not p:
+        embed = discord.Embed(title="❌ اللاعب غير موجود!", color=discord.Color.red())
+        await ctx.send(embed=embed)
+        return
+
+    history = db.get_history(pid)
+    e = discord.Embed(title=f"📜 سجل {p['name']}", color=discord.Color.purple())
+    if not history:
+        e.description = "لا يوجد سجل لهذا اللاعب بعد."
+    else:
+        lines = []
+        for h in history:
+            amount = f" ({h['amount']}م)" if h["amount"] else ""
+            lines.append(f"▫️ **{h['event']}**{amount}\n   🕐 {h['time']}")
+        e.description = "\n".join(lines)
+    e.set_footer(text="كل عملية على اللاعب تُسجل هنا تلقائياً")
+    await ctx.send(embed=e)
 
 
 # ---------------------------------------------------------------------------
@@ -789,7 +833,12 @@ async def tips(ctx):
 async def help_cmd(ctx):
     embed = discord.Embed(
         title="📘 أوامر أوهارا المدرب الأفضل",
-        description="نظام كرة قدم افتراضي كامل — أنشئ فريقك، تعاقد مع نجوم، وتقدم في الدوريات!",
+        description=(
+            "نظام كرة قدم افتراضي كامل — أنشئ فريقك، تعاقد مع نجوم، وتقدم في الدوريات!\n\n"
+            "✨ **الطريقة الأسهل:** اكتب `!انشاء <اسم>` ثم `!فريقي` "
+            "وستظهر لك **قائمة أزرار** لكل شيء (شراء، تطوير، تشكيل، خطة، بيع، طرد، استقالة...) "
+            "بدون الحاجة لكتابة الأوامر!"
+        ),
         color=discord.Color.blue(),
     )
 
@@ -797,7 +846,7 @@ async def help_cmd(ctx):
         name="⚽ إنشاء الفريق",
         value=(
             "`!انشاء <اسم>` — إنشاء فريق جديد\n"
-            "`!فريقي` — عرض فريقك وتفاصيله"
+            "`!فريقي` — 🎮 لوحة التحكم بالأزرار (شراء/تطوير/تشكيل/بيع/طرد/استقالة/تحدي/دوريات)"
         ),
         inline=False,
     )
@@ -805,9 +854,9 @@ async def help_cmd(ctx):
     embed.add_field(
         name="🛒 سوق الانتقالات",
         value=(
-            "`!سوق` — عرض اللاعبين المتاحين\n"
+            "`!سوق` — 🎮 سوق بالقوائم: اختر الدوري ← النادي ← اللاعب\n"
             "`!لاعب <رقم>` — تفاصيل لاعب\n"
-            "`!اشتري <رقم>` — شراء لاعب\n"
+            "`!سجل <رقم>` — سجل تاريخ اللاعب\n"
             "`!بيع <رقم>` — بيع لاعب"
         ),
         inline=False,
@@ -862,7 +911,7 @@ async def help_cmd(ctx):
         inline=False,
     )
 
-    embed.set_footer(text="أوامر الدوريات والمباريات قادمة قريباً!")
+    embed.set_footer(text="أوهارا فانتزب — مدربك الرقمي الأفضل ⚽")
     await ctx.send(embed=embed)
 
 
