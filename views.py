@@ -14,17 +14,24 @@ POS_EMOJI = {"GK": "🧤", "DEF": "🛡️", "MID": "🎽", "ATT": "⚽"}
 def team_embed(team, players):
     e = discord.Embed(title=f"⚽ {team['name']}", color=discord.Color.green())
     e.add_field(name="💰 الميزانية", value=f"{team['budget']}م", inline=True)
-    e.add_field(name="🟢 الخبرة", value=f"{team['xp']} نقطة", inline=True)
+    e.add_field(name="🪙 الرموز", value=f"{team['tokens']}", inline=True)
+    e.add_field(name="⭐ المستوى", value=f"{team['level']}", inline=True)
+    e.add_field(name="📊 السمعة", value=f"{team['reputation']}", inline=True)
+    e.add_field(name="🏆 الألقاب", value=f"{team['titles']}", inline=True)
+    e.add_field(name="📈 السجل", value=f"{team['wins']}ف/{team['draws']}ت/{team['losses']}خ", inline=True)
     e.add_field(name="📐 التشكيل", value=team["formation"], inline=True)
     e.add_field(name="🎯 الخطة", value=team["tactic"], inline=True)
     e.add_field(name="🏋️ التدريب", value=f"{team['training_invest']} نقطة", inline=True)
+
+    avg_cond = round(sum(p["condition"] for p in players) / len(players)) if players else 0
+    e.add_field(name="🔋 متوسط الجاهزية", value=f"{avg_cond}%", inline=True)
     e.add_field(name="👥 عدد اللاعبين", value=str(len(players)), inline=True)
 
     if players:
         lines = []
         for p in players:
             emo = POS_EMOJI.get(p["position"], "")
-            lines.append(f"{emo} `{p['id']}` **{p['name']}** — ريت {p['rating']} | {p['price']}م")
+            lines.append(f"{emo} `{p['id']}` **{p['name']}** — OVR {p['ovr']} | 🔋{p['condition']}%")
         e.add_field(name="اللاعبون", value="\n".join(lines[:25]), inline=False)
     else:
         e.add_field(name="اللاعبون", value="لا يوجد لاعبين. اضغط 🛒 شراء.", inline=False)
@@ -33,14 +40,37 @@ def team_embed(team, players):
     return e
 
 
+def _bar(val):
+    filled = round(val / 10)
+    return "█" * filled + "░" * (10 - filled)
+
+
 def player_detail_embed(p):
+    return player_card_embed(p)
+
+
+def player_card_embed(p):
     pos = POS_ARABIC.get(p["position"], p["position"])
-    status = "في فريق ⚽" if p["team_id"] else "في السوق 🛒"
-    e = discord.Embed(title=f"📋 {p['name']}", color=discord.Color.blue())
-    e.add_field(name="المركز", value=f"{POS_EMOJI.get(p['position'],'')} {pos}", inline=True)
-    e.add_field(name="الريت", value=str(p["rating"]), inline=True)
-    e.add_field(name="السعر", value=f"{p['price']}م", inline=True)
-    e.add_field(name="الحالة", value=status, inline=True)
+    status = "في فريق ⚽" if p["team_id"] else ("لاعب حر 🌟" if p["club_id"] == 0 else "في السوق 🛒")
+    color = discord.Color.gold() if p["club_id"] == 0 else (discord.Color.green() if p["team_id"] else discord.Color.blue())
+    e = discord.Embed(title=f"{POS_EMOJI.get(p['position'],'')} {p['name']}", color=color)
+    e.add_field(name="المركز", value=f"{pos}", inline=True)
+    e.add_field(name="⭐ OVR", value=f"**{p['ovr']}**", inline=True)
+    e.add_field(name="💰 السعر", value=f"{p['price']}م", inline=True)
+    e.add_field(name="🎂 العمر", value=f"{p['age']}", inline=True)
+    e.add_field(name="🦶 القدم", value=p["foot"], inline=True)
+    e.add_field(name="🔋 الجاهزية", value=f"{p['condition']}%", inline=True)
+    e.add_field(name="😊 الروح", value=f"{p['morale']}%", inline=True)
+    e.add_field(name="⚙️ الجهد", value=p["work_rate"], inline=True)
+    if p["special"]:
+        e.add_field(name="✨ مهارة خاصة", value=p["special"], inline=True)
+
+    attr_lines = []
+    for k in game_data.ATTR_KEYS:
+        a = game_data.ATTR[k]
+        attr_lines.append(f"{a['emoji']} {a['name']} `{p[k]}` {_bar(p[k])}")
+    e.add_field(name="📊 الخصائص", value="\n".join(attr_lines), inline=False)
+    e.add_field(name="الحالة", value=status, inline=False)
     return e
 
 
@@ -498,12 +528,7 @@ class MarketPlayerSelect(discord.ui.Select):
         pid = int(val[2:])
         p = db.get_player(pid)
         team = db.get_team_by_owner(str(self.owner_id))
-        e = discord.Embed(title=f"📋 {p['name']}", color=discord.Color.blue())
-        pos = POS_ARABIC.get(p["position"], p["position"])
-        e.add_field(name="المركز", value=pos, inline=True)
-        e.add_field(name="الريت", value=str(p["rating"]), inline=True)
-        e.add_field(name="السعر", value=f"{p['price']}م", inline=True)
-        e.add_field(name="الحالة", value="في السوق 🛒", inline=True)
+        e = player_card_embed(p)
         view = OwnedView(self.owner_id)
         club = db.get_club(p["club_id"])
         if club:
@@ -602,6 +627,250 @@ class BackButton(discord.ui.Button):
 
     async def callback(self, interaction: discord.Interaction):
         await interaction.response.edit_message(content="تم الرجوع.", embed=None, view=None)
+
+
+# ---------------------------------------------------------------------------
+# FULL TACTICS (Top Eleven style)
+# ---------------------------------------------------------------------------
+def tactics_embed(team):
+    e = discord.Embed(title="🧠 التكتيك الكامل", color=discord.Color.purple())
+    e.add_field(name="🅿️ تركيز التمرير", value=team["passing"], inline=True)
+    e.add_field(name="⏱️ الضغط", value=team["pressing"], inline=True)
+    e.add_field(name="🛡️ الرقابة", value=team["marking"], inline=True)
+    e.add_field(name="⚡ الإيقاع", value=team["tempo"], inline=True)
+    e.add_field(name="🔁 الهجوم المرتد", value=team["counter"], inline=True)
+    e.add_field(name="🚩 فخ التسلل", value=team["offside"], inline=True)
+    e.set_footer(text="🔒 كلها مخفية عن الخصم حتى صافرة البداية")
+    return e
+
+
+class TacticDimSelect(discord.ui.Select):
+    def __init__(self, owner_id, column, options_dict, label):
+        self.owner_id = owner_id
+        self.column = column
+        options = [discord.SelectOption(label=k, value=k) for k in options_dict]
+        super().__init__(placeholder=label, options=options, custom_id=f"tac_{column}")
+
+    async def callback(self, interaction: discord.Interaction):
+        team = db.get_team_by_owner(str(self.owner_id))
+        db.update_team(team["id"], **{self.column: self.values[0]})
+        await interaction.response.edit_message(
+            embed=tactics_embed(db.get_team_by_owner(str(self.owner_id))),
+            view=FullTacticsView(self.owner_id),
+        )
+
+
+class FullTacticsView(OwnedView):
+    def __init__(self, owner_id):
+        super().__init__(owner_id)
+        self.add_item(TacticDimSelect(owner_id, "passing", game_data.PASSING_FOCUS, "🅿️ تركيز التمرير..."))
+        self.add_item(TacticDimSelect(owner_id, "pressing", game_data.PRESSING, "⏱️ الضغط..."))
+        self.add_item(TacticDimSelect(owner_id, "marking", game_data.MARKING, "🛡️ الرقابة..."))
+        self.add_item(TacticDimSelect(owner_id, "tempo", game_data.TEMPO, "⚡ الإيقاع..."))
+
+    @discord.ui.button(label="🔁 الهجوم المرتد", style=discord.ButtonStyle.primary, row=1)
+    async def counter(self, interaction: discord.Interaction, button: discord.ui.Button):
+        team = db.get_team_by_owner(str(self.owner_id))
+        db.update_team(team["id"], counter="لا" if team["counter"] == "نعم" else "نعم")
+        await interaction.response.edit_message(
+            embed=tactics_embed(db.get_team_by_owner(str(self.owner_id))), view=self)
+
+    @discord.ui.button(label="🚩 فخ التسلل", style=discord.ButtonStyle.primary, row=1)
+    async def offside(self, interaction: discord.Interaction, button: discord.ui.Button):
+        team = db.get_team_by_owner(str(self.owner_id))
+        db.update_team(team["id"], offside="لا" if team["offside"] == "نعم" else "نعم")
+        await interaction.response.edit_message(
+            embed=tactics_embed(db.get_team_by_owner(str(self.owner_id))), view=self)
+
+    @discord.ui.button(label="🔙 رجوع", style=discord.ButtonStyle.secondary, row=1)
+    async def back(self, interaction: discord.Interaction, button: discord.ui.Button):
+        team = db.get_team_by_owner(str(self.owner_id))
+        players = db.team_players(team["id"])
+        await interaction.response.edit_message(
+            embed=team_embed(team, players), view=TeamPanel(self.owner_id))
+
+
+# ---------------------------------------------------------------------------
+# TRAINING DRILL (7 drills)
+# ---------------------------------------------------------------------------
+class TrainingDrillSelect(discord.ui.Select):
+    def __init__(self, owner_id):
+        self.owner_id = owner_id
+        options = [
+            discord.SelectOption(label=f"{d['emoji']} {k}", description=d["desc"], value=k)
+            for k, d in game_data.DRILLS.items()
+        ]
+        super().__init__(placeholder="اختر الحصة التدريبية...", options=options)
+
+    async def callback(self, interaction: discord.Interaction):
+        drill = self.values[0]
+        await interaction.response.send_modal(TrainDrillModal(self.owner_id, drill))
+
+
+class TrainDrillModal(discord.ui.Modal, title="🏋️ حصة تدريبية"):
+    def __init__(self, owner_id, drill):
+        super().__init__()
+        self.owner_id = owner_id
+        self.drill = drill
+        self.amount = discord.ui.TextInput(
+            label=f"نقاط الخبرة للاستثمار (حتى {game_data.CONFIG['TRAIN_MAX_XP']})",
+            placeholder="مثال: 200", required=True, max_length=5)
+        self.add_item(self.amount)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            amount = int(str(self.amount.value))
+        except ValueError:
+            await interaction.response.send_message("❌ أدخل رقماً صحيحاً.", ephemeral=True)
+            return
+        team = db.get_team_by_owner(str(self.owner_id))
+        amount = max(0, min(amount, game_data.CONFIG["TRAIN_MAX_XP"]))
+        if team["xp"] < amount:
+            await interaction.response.send_message(
+                f"❌ خبرتك ({team['xp']}) غير كافية.", ephemeral=True)
+            return
+        if team["training_invest"] > 0:
+            db.update_team(team["id"], training_invest=0)
+        db.train_drill(team["id"], self.drill, 1, amount)
+        d = game_data.DRILLS[self.drill]
+        e = discord.Embed(
+            title=f"{d['emoji']} تمت الحصة: {self.drill}",
+            description=(
+                f"استثمرت **{amount}** نقطة خبرة.\n"
+                f"📈 تطورت الخصائص: {', '.join(game_data.ATTR[a]['name'] for a in d['attrs'])}\n"
+                f"🔋 انخفضت جاهزية اللاعبين قليلاً. استعدها بـ `!راحة`."
+            ),
+            color=discord.Color.green(),
+        )
+        await interaction.response.send_message(embed=e, ephemeral=True)
+
+
+# ---------------------------------------------------------------------------
+# FACILITIES
+# ---------------------------------------------------------------------------
+def facilities_embed(team):
+    fac = db.get_facilities(team["id"])
+    e = discord.Embed(title=f"🏗️ منشآت {team['name']}", color=discord.Color.teal())
+    lines = []
+    for key, spec in game_data.FACILITIES.items():
+        cur = fac[key]
+        lvl_info = spec["levels"][min(cur, len(spec["levels"]) - 1)]
+        if cur >= len(spec["levels"]):
+            lines.append(f"{spec['emoji']} **{spec['name']}**: ممتلئ (مستوى {cur})")
+        else:
+            lines.append(f"{spec['emoji']} **{spec['name']}**: مستوى {cur} → التالي {lvl_info['cost']}م")
+    e.description = "\n".join(lines)
+    e.add_field(name="💰 الميزانية", value=f"{team['budget']}م", inline=True)
+    e.set_footer(text="كل منشأة تمنحك ميزة تنافسية دائمة")
+    return e
+
+
+class FacilityUpgradeButton(discord.ui.Button):
+    def __init__(self, owner_id, key):
+        self.owner_id = owner_id
+        self.key = key
+        spec = game_data.FACILITIES[key]
+        team = db.get_team_by_owner(str(owner_id))
+        fac = db.get_facilities(team["id"])
+        cur = fac[key]
+        if cur >= len(spec["levels"]):
+            super().__init__(label=f"{spec['emoji']} {spec['name']} (ممتلئ)", style=discord.ButtonStyle.secondary, disabled=True)
+        else:
+            cost = spec["levels"][cur]["cost"]
+            super().__init__(label=f"{spec['emoji']} {spec['name']} → {cost}م", style=discord.ButtonStyle.success)
+
+    async def callback(self, interaction: discord.Interaction):
+        ok, info = db.upgrade_facility(self.owner_id_team(), self.key)
+        await interaction.response.edit_message(
+            embed=facilities_embed(db.get_team_by_owner(str(self.owner_id))),
+            view=FacilitiesView(self.owner_id))
+
+    def owner_id_team(self):
+        return db.get_team_by_owner(str(self.owner_id))["id"]
+
+
+class FacilitiesView(OwnedView):
+    def __init__(self, owner_id):
+        super().__init__(owner_id)
+        for key in game_data.FACILITIES:
+            self.add_item(FacilityUpgradeButton(owner_id, key))
+
+    @discord.ui.button(label="🔙 رجوع", style=discord.ButtonStyle.secondary, row=1)
+    async def back(self, interaction: discord.Interaction, button: discord.ui.Button):
+        team = db.get_team_by_owner(str(self.owner_id))
+        players = db.team_players(team["id"])
+        await interaction.response.edit_message(embed=team_embed(team, players), view=TeamPanel(self.owner_id))
+
+
+# ---------------------------------------------------------------------------
+# SCOUT (free agents)
+# ---------------------------------------------------------------------------
+class ScoutView(OwnedView):
+    @discord.ui.button(label="🔍 كشافة (10 رموز)", emoji="🌟", style=discord.ButtonStyle.success)
+    async def scout(self, interaction: discord.Interaction, button: discord.ui.Button):
+        team = db.get_team_by_owner(str(self.owner_id))
+        if not db.spend_tokens(team["id"], 10):
+            await interaction.response.send_message(
+                f"❌ رموزك ({team['tokens']}) لا تكفي (تحتاج 10).", ephemeral=True)
+            return
+        p = db.scout_player(team["id"])
+        db.update_player(p["id"], team_id=team["id"])
+        db.add_history(p["id"], "كشافة", 0, str(self.owner_id), str(team["id"]))
+        e = player_card_embed(p)
+        e.title = "🌟 لاعب جديد من الكشافة!"
+        e.description = f"انضم **{p['name']}** مباشرة إلى فريقك!"
+        await interaction.response.edit_message(content=None, embed=e, view=None)
+
+
+# ---------------------------------------------------------------------------
+# SEASON (league matchdays)
+# ---------------------------------------------------------------------------
+class SeasonView(OwnedView):
+    @discord.ui.button(label="📊 الترتيب", emoji="🏆", style=discord.ButtonStyle.primary)
+    async def standings(self, interaction: discord.Interaction, button: discord.ui.Button):
+        team = db.get_team_by_owner(str(self.owner_id))
+        if not team["league_id"]:
+            await interaction.response.send_message("❌ فريقك ليس في دوري. انضم عبر `!دوريات`.", ephemeral=True)
+            return
+        season = db.get_season(team["league_id"])
+        if not season or season["status"] != "active":
+            await interaction.response.send_message("❌ لا يوجد موسم نشط. ابدأ بـ `!موسم`.", ephemeral=True)
+            return
+        standings = json.loads(season["standings"])
+        teams = {t["id"]: t for t in db.get_league_teams(team["league_id"])}
+        rows = []
+        for tid, s in sorted(standings.items(), key=lambda kv: (kv[1]["Pts"], kv[1]["GF"] - kv[1]["GA"]), reverse=True):
+            name = teams.get(int(tid), {}).get("name", f"فريق {tid}")
+            rows.append(f"`{len(rows)+1}.` **{name}** — {s['Pts']}ن | {s['W']}ف/{s['D']}ت/{s['L']}خ | {s['GF']}-{s['GA']}")
+        e = discord.Embed(title=f"🏆 ترتيب الدوري (جولة {season['round']}/{season['total_rounds']})",
+                          color=discord.Color.gold())
+        e.description = "\n".join(rows) if rows else "لا يوجد"
+        await interaction.response.edit_message(content=None, embed=e, view=self)
+
+    @discord.ui.button(label="⚽ تقديم جولة", emoji="▶️", style=discord.ButtonStyle.success)
+    async def advance(self, interaction: discord.Interaction, button: discord.ui.Button):
+        team = db.get_team_by_owner(str(self.owner_id))
+        if not team["league_id"]:
+            await interaction.response.send_message("❌ فريقك ليس في دوري.", ephemeral=True)
+            return
+        res = db.advance_season(team["league_id"])
+        if res is None:
+            await interaction.response.send_message("❌ لا يوجد موسم نشط. ابدأ بـ `!موسم`.", ephemeral=True)
+            return
+        if res == "انتهى":
+            await interaction.response.send_message("🏁 انتهى الموسم! البطل توج باللقب.", embed=None, view=None)
+            return
+        lines = []
+        teams = {t["id"]: t for t in db.get_league_teams(team["league_id"])}
+        for a, b, ga, gb in res:
+            na = teams.get(a, {}).get("name", f"فريق {a}")
+            nb = teams.get(b, {}).get("name", f"فريق {b}")
+            lines.append(f"⚽ {na} **{ga}** - **{gb}** {nb}")
+        e = discord.Embed(title="⚽ نتائج الجولة", color=discord.Color.green())
+        e.description = "\n".join(lines)
+        await interaction.response.edit_message(content=None, embed=e, view=self)
+
+
 class TeamPanel(OwnedView):
     @discord.ui.button(label="سوق", emoji="🛒", style=discord.ButtonStyle.success, row=0)
     async def buy(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -675,3 +944,32 @@ class TeamPanel(OwnedView):
             view=ResignView(self.owner_id),
             ephemeral=True,
         )
+
+    @discord.ui.button(label="تكتيك كامل", emoji="🧠", style=discord.ButtonStyle.secondary, row=3)
+    async def full_tactics(self, interaction: discord.Interaction, button: discord.ui.Button):
+        team = db.get_team_by_owner(str(self.owner_id))
+        await interaction.response.send_message(
+            embed=tactics_embed(team), view=FullTacticsView(self.owner_id), ephemeral=True)
+
+    @discord.ui.button(label="حصة تدريب", emoji="🏋️", style=discord.ButtonStyle.secondary, row=3)
+    async def drill(self, interaction: discord.Interaction, button: discord.ui.Button):
+        view = OwnedView(self.owner_id)
+        view.add_item(TrainingDrillSelect(self.owner_id))
+        await interaction.response.send_message("🏋️ اختر الحصة التدريبية:", view=view, ephemeral=True)
+
+    @discord.ui.button(label="منشآت", emoji="🏗️", style=discord.ButtonStyle.secondary, row=3)
+    async def facilities(self, interaction: discord.Interaction, button: discord.ui.Button):
+        team = db.get_team_by_owner(str(self.owner_id))
+        await interaction.response.send_message(
+            embed=facilities_embed(team), view=FacilitiesView(self.owner_id), ephemeral=True)
+
+    @discord.ui.button(label="كشافة", emoji="🔍", style=discord.ButtonStyle.primary, row=3)
+    async def scout(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_message(
+            "🔍 الكشافة تجلب لك لاعباً حراً مباشرة لفريقك مقابل 10 رموز:",
+            view=ScoutView(self.owner_id), ephemeral=True)
+
+    @discord.ui.button(label="موسمي", emoji="🏆", style=discord.ButtonStyle.primary, row=3)
+    async def season(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_message(
+            "🏆 إدارة موسم دوريك:", view=SeasonView(self.owner_id), ephemeral=True)

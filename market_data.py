@@ -1,11 +1,12 @@
 import random
+import game_data
 
 LEAGUES = [
-    {"id": 1, "name": "دوري أبطال أوروبا", "flag": "🏆"},
-    {"id": 2, "name": "الدوري الإنجليزي", "flag": "🏴󠁧󠁢󠁥󠁮󠁧󠁿"},
-    {"id": 3, "name": "الدوري الإسباني", "flag": "🇪🇸"},
-    {"id": 4, "name": "الدوري الإيطالي", "flag": "🇮🇹"},
-    {"id": 5, "name": "الدوري الألماني", "flag": "🇩🇪"},
+    {"id": 1, "name": "دوري أبطال أوروبا", "flag": "🏆", "emoji": "🏆"},
+    {"id": 2, "name": "الدوري الإنجليزي", "flag": "🏴󠁧󠁢󠁥󠁮󠁧󠁿", "emoji": "🏴󠁧󠁢󠁥󠁮󠁧󠁿"},
+    {"id": 3, "name": "الدوري الإسباني", "flag": "🇪🇸", "emoji": "🇪🇸"},
+    {"id": 4, "name": "الدوري الإيطالي", "flag": "🇮🇹", "emoji": "🇮🇹"},
+    {"id": 5, "name": "الدوري الألماني", "flag": "🇩🇪", "emoji": "🇩🇪"},
 ]
 
 CLUBS = [
@@ -120,7 +121,6 @@ FIRST_NAMES = [
     "Luca", "Francesco", "Alessandro", "Lorenzo", "Matteo", "Antonio", "Giovanni", "Riccardo", "Federico", "Paolo",
     "Hans", "Klaus", "Karl", "Franz", "Otto", "Heinrich", "Ludwig", "Friedrich", "Ernst", "Wilhelm",
 ]
-
 LAST_NAMES = [
     "العبدلي", "الشهري", "الغامدي", "المالكي", "القرني", "الحارثي", "الزهراني", "السلمي", "الحربي", "العتيبي",
     "المطيري", "الدوسري", "السهلي", "الشمراني", "العنزي", "القحطاني", "الهذلي", "الناصر", "الجابر", "الصالح",
@@ -129,6 +129,73 @@ LAST_NAMES = [
     "Rossi", "Russo", "Ferrari", "Bianchi", "Romano", "Colombo", "Ricci", "Marino", "Greco", "Bruno",
     "Mueller", "Schmidt", "Schneider", "Fischer", "Weber", "Wagner", "Becker", "Hoffmann", "Zimmermann", "Braun",
 ]
+
+POS_WEIGHTS = game_data.POS_WEIGHTS
+
+
+def compute_ovr(pos, attrs):
+    w = POS_WEIGHTS[pos]
+    total = 0.0
+    for k, weight in w.items():
+        total += attrs[k] * weight
+    return max(40, min(99, round(total)))
+
+
+def generate_player(name, pos, base, club_id, league_id, age=None):
+    if pos == "GK":
+        base_low, base_high = 74, 91
+    elif pos == "DEF":
+        base_low, base_high = 76, 91
+    elif pos == "MID":
+        base_low, base_high = 78, 93
+    else:
+        base_low, base_high = 78, 95
+    core = base if base else random.randint(base_low, base_high)
+
+    attrs = {}
+    for k in game_data.ATTR_KEYS:
+        # القدرات الأساسية تتمركز حول النواة، وترتبط بالمركز
+        spread = random.randint(-6, 6)
+        val = core + spread
+        # مركزية الخصائص: حراس أقوى دفاعاً، مهاجمون أقوى تسديداً...
+        if pos == "GK":
+            if k == "def":
+                val = core + random.randint(0, 8)
+            if k in ("sho", "pas"):
+                val = max(45, core - random.randint(10, 25))
+        elif pos == "DEF" and k == "def":
+            val = core + random.randint(0, 6)
+        elif pos == "ATT" and k == "sho":
+            val = core + random.randint(0, 6)
+        elif pos == "MID" and k == "pas":
+            val = core + random.randint(0, 6)
+        attrs[k] = max(40, min(99, val))
+
+    ovr = compute_ovr(pos, attrs)
+    age = age if age else random.randint(18, 34)
+    # العمر يؤثر على السعر: الشباب أغلى
+    age_mod = 1.15 if age <= 23 else (1.0 if age <= 29 else 0.85)
+    price = int(ovr * game_data.CONFIG["PRICE_PER_RATING"] * age_mod) + random.randint(-20, 30)
+    price = max(30, price)
+
+    return {
+        "name": name,
+        "position": pos,
+        "pac": attrs["pac"], "sho": attrs["sho"], "pas": attrs["pas"],
+        "dri": attrs["dri"], "def": attrs["def"], "phy": attrs["phy"],
+        "ovr": ovr,
+        "rating": ovr,
+        "price": price,
+        "age": age,
+        "condition": 100,
+        "morale": random.randint(70, 100),
+        "foot": random.choice(game_data.FOOT),
+        "work_rate": random.choice(game_data.WORK_RATES),
+        "special": random.choice([""] + game_data.SPECIAL_ABILITIES) if random.random() < 0.3 else "",
+        "club_id": club_id,
+        "league_id": league_id,
+    }
+
 
 def generate_players_data():
     players = []
@@ -143,29 +210,20 @@ def generate_players_data():
                 if name not in used:
                     used.add(name)
                     break
-            pos = random.choice(["GK", "DEF", "DEF", "MID", "MID", "ATT", "ATT", "ATT"])
-            rating = random.randint(75, 92)
-            if pos == "GK":
-                rating = random.randint(75, 90)
-            elif pos == "DEF":
-                rating = random.randint(76, 91)
-            elif pos == "MID":
-                rating = random.randint(78, 93)
+            roll = random.random()
+            if roll < 0.125:
+                pos = "GK"
+            elif roll < 0.5:
+                pos = "DEF"
+            elif roll < 0.85:
+                pos = "MID"
             else:
-                rating = random.randint(78, 95)
-            price = rating * 2 + random.randint(-10, 15)
-            if price < 30:
-                price = 30
-            players.append({
-                "id": pid,
-                "name": name,
-                "position": pos,
-                "rating": rating,
-                "price": price,
-                "club_id": club["id"],
-                "league_id": club["league_id"],
-            })
+                pos = "ATT"
+            p = generate_player(name, pos, None, club["id"], club["league_id"])
+            p["id"] = pid
+            players.append(p)
             pid += 1
     return players
+
 
 PLAYERS = generate_players_data()

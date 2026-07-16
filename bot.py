@@ -336,19 +336,12 @@ async def player_info(ctx, pid: int):
     pos = POS_ARABIC.get(p["position"], p["position"])
     status = "في فريق ⚽" if p["team_id"] else "في السوق 🛒"
 
-    embed = discord.Embed(
-        title=f"📋 {p['name']}",
-        color=discord.Color.blue(),
-    )
-    embed.add_field(name="المركز", value=f"{POS_EMOJI.get(p['position'],'')} {pos}", inline=True)
-    embed.add_field(name="الريت", value=str(p["rating"]), inline=True)
-    embed.add_field(name="السعر", value=f"{p['price']}م", inline=True)
-    embed.add_field(name="الحالة", value=status, inline=True)
+    e = views.player_card_embed(p)
     if p["club_id"]:
         club = db.get_club(p["club_id"])
         if club:
-            embed.add_field(name="النادي", value=club["name"], inline=True)
-    await ctx.send(embed=embed)
+            e.add_field(name="النادي", value=club["name"], inline=True)
+    await ctx.send(embed=e)
 
 
 @bot.command(name="سجل", description="عرض سجل تاريخ اللاعب")
@@ -755,29 +748,32 @@ async def run_match(ctx, pm):
         "formation": c_team["formation"],
         "tactic": c_team["tactic"],
         "training": c_team["training_invest"],
+        "tactics": c_team,
     }
     opponent = {
         "players": db.team_players(o_team["id"]),
         "formation": o_team["formation"],
         "tactic": o_team["tactic"],
         "training": o_team["training_invest"],
+        "tactics": o_team,
     }
 
     ga, gb, result, notes = engine.simulate(challenger, opponent)
-    cfg = game_data.CONFIG
+
+    db.reduce_condition(c_team["id"], game_data.CONFIG["MATCH_CONDITION_COST"])
+    db.reduce_condition(o_team["id"], game_data.CONFIG["MATCH_CONDITION_COST"])
+    db.update_team(c_team["id"], training_invest=0)
+    db.update_team(o_team["id"], training_invest=0)
 
     if result == "فوز":
-        db.update_team(c_team["id"], xp=c_team["xp"] + cfg["WIN_XP"], budget=c_team["budget"] + cfg["WIN_MONEY"], training_invest=0)
-        db.update_team(o_team["id"], xp=o_team["xp"] + cfg["LOSS_XP"], budget=o_team["budget"] + cfg["LOSS_MONEY"], training_invest=0)
-        winner = c_team["name"]
+        winner = c_team["name"]; loser = o_team["name"]
     elif result == "خسارة":
-        db.update_team(o_team["id"], xp=o_team["xp"] + cfg["WIN_XP"], budget=o_team["budget"] + cfg["WIN_MONEY"], training_invest=0)
-        db.update_team(c_team["id"], xp=c_team["xp"] + cfg["LOSS_XP"], budget=c_team["budget"] + cfg["LOSS_MONEY"], training_invest=0)
-        winner = o_team["name"]
+        winner = o_team["name"]; loser = c_team["name"]
     else:
-        db.update_team(c_team["id"], xp=c_team["xp"] + cfg["DRAW_XP"], budget=c_team["budget"] + cfg["DRAW_MONEY"], training_invest=0)
-        db.update_team(o_team["id"], xp=o_team["xp"] + cfg["DRAW_XP"], budget=o_team["budget"] + cfg["DRAW_MONEY"], training_invest=0)
-        winner = None
+        winner = None; loser = None
+
+    lc_up, lc_lvl = db.record_result(c_team["id"], result)
+    lo_up, lo_lvl = db.record_result(o_team["id"], "خسارة" if result == "فوز" else ("فوز" if result == "خسارة" else "تعادل"))
 
     embed = discord.Embed(
         title=f"⚽ نتيجة المباراة #{pm['id']}",
@@ -795,16 +791,198 @@ async def run_match(ctx, pm):
         embed.add_field(name="🤝 النتيجة", value="**تعادل!**", inline=False)
 
     plans = (
-        f"• **{c_team['name']}**: {c_team['formation']} / {c_team['tactic']} / تدريب {c_team['training_invest']}\n"
-        f"• **{o_team['name']}**: {o_team['formation']} / {o_team['tactic']} / تدريب {o_team['training_invest']}"
+        f"• **{c_team['name']}**: {c_team['formation']} / {c_team['tactic']} / "
+        f"تمرير {c_team['passing']} / ضغط {c_team['pressing']} / رقابة {c_team['marking']} / إيقاع {c_team['tempo']}\n"
+        f"• **{o_team['name']}**: {o_team['formation']} / {o_team['tactic']} / "
+        f"تمرير {o_team['passing']} / ضغط {o_team['pressing']} / رقابة {o_team['marking']} / إيقاع {o_team['tempo']}"
     )
     embed.add_field(name="📋 الخطط المكشوفة", value=plans, inline=False)
+
+    extra = []
+    if lc_up:
+        extra.append(f"⬆️ **{c_team['name']}** وصل للمستوى {lc_lvl}!")
+    if lo_up:
+        extra.append(f"⬆️ **{o_team['name']}** وصل للمستوى {lo_lvl}!")
+    if extra:
+        embed.add_field(name="✨ ترقية", value="\n".join(extra), inline=False)
 
     if notes:
         embed.add_field(name="📝 ملاحظات", value="\n".join(notes), inline=False)
 
     db.delete_pending(pm["id"])
     await ctx.send(embed=embed)
+
+
+# ---------------------------------------------------------------------------
+# NEW SYSTEMS (borrowed from Top Eleven / Manager Evolution)
+# ---------------------------------------------------------------------------
+@bot.command(name="تكتيك", description="ضبط التكتيك الكامل (تمرير/ضغط/رقابة/إيقاع/مرتد/تسلل)")
+@commands.cooldown(1, 5, commands.BucketType.user)
+async def full_tactics_cmd(ctx):
+    team, _ = get_state(ctx.author)
+    if not team:
+        embed = discord.Embed(title="❌ أنشئ فريقاً أولاً!", color=discord.Color.red())
+        await ctx.send(embed=embed)
+        return
+    await ctx.send(embed=views.tactics_embed(team), view=views.FullTacticsView(ctx.author.id))
+
+
+@bot.command(name="راحة", description="استعادة جاهزية اللاعبين عبر المركز الطبي")
+@commands.cooldown(1, 30, commands.BucketType.user)
+async def rest_cmd(ctx):
+    team, players = get_state(ctx.author)
+    if not team:
+        embed = discord.Embed(title="❌ أنشئ فريقاً أولاً!", color=discord.Color.red())
+        await ctx.send(embed=embed)
+        return
+    before = round(sum(p["condition"] for p in players) / len(players)) if players else 0
+    recover = db.rest_team(team["id"])
+    after = db.team_players(team["id"])
+    after_avg = round(sum(p["condition"] for p in after) / len(after)) if after else 0
+    embed = discord.Embed(
+        title="💤 راحة الفريق",
+        description=f"🔋 الجاهزية: {before}% ← **{after_avg}%** (مركز طبي +{recover})",
+        color=discord.Color.green(),
+    )
+    await ctx.send(embed=embed)
+
+
+@bot.command(name="منشأة", description="عرض وترقية منشآت النادي")
+@commands.cooldown(1, 5, commands.BucketType.user)
+async def facilities_cmd(ctx):
+    team, _ = get_state(ctx.author)
+    if not team:
+        embed = discord.Embed(title="❌ أنشئ فريقاً أولاً!", color=discord.Color.red())
+        await ctx.send(embed=embed)
+        return
+    await ctx.send(embed=views.facilities_embed(team), view=views.FacilitiesView(ctx.author.id))
+
+
+@bot.command(name="كشاف", description="استقدام لاعب حر مباشرة لفريقك (10 رموز)")
+@commands.cooldown(1, 30, commands.BucketType.user)
+async def scout_cmd(ctx):
+    team, _ = get_state(ctx.author)
+    if not team:
+        embed = discord.Embed(title="❌ أنشئ فريقاً أولاً!", color=discord.Color.red())
+        await ctx.send(embed=embed)
+        return
+    if not db.spend_tokens(team["id"], 10):
+        embed = discord.Embed(
+            title="❌ رموز غير كافية!",
+            description=f"رموزك: **{team['tokens']}** | مطلوب: 10 رمز",
+            color=discord.Color.red(),
+        )
+        await ctx.send(embed=embed)
+        return
+    p = db.scout_player(team["id"])
+    db.update_player(p["id"], team_id=team["id"])
+    db.add_history(p["id"], "كشافة", 0, str(ctx.author.id), str(team["id"]))
+    e = views.player_card_embed(p)
+    e.title = "🌟 لاعب جديد من الكشافة!"
+    e.description = f"انضم **{p['name']}** مباشرة إلى فريقك!"
+    await ctx.send(embed=e)
+
+
+@bot.command(name="موسم", description="بدء موسم دوري لفريقك")
+@commands.cooldown(1, 15, commands.BucketType.user)
+async def season_start_cmd(ctx):
+    team, _ = get_state(ctx.author)
+    if not team:
+        embed = discord.Embed(title="❌ أنشئ فريقاً أولاً!", color=discord.Color.red())
+        await ctx.send(embed=embed)
+        return
+    if not team["league_id"]:
+        embed = discord.Embed(
+            title="❌ فريقك ليس في دوري!",
+            description="انضم لدوري عبر `!دوريات` أولاً.",
+            color=discord.Color.red(),
+        )
+        await ctx.send(embed=embed)
+        return
+    rounds = db.create_season(team["league_id"])
+    if not rounds:
+        embed = discord.Embed(
+            title="❌ لا يمكن بدء الموسم!",
+            description="الدوري يحتاج عضوين على الأقل.",
+            color=discord.Color.red(),
+        )
+        await ctx.send(embed=embed)
+        return
+    embed = discord.Embed(
+        title="🏆 انطلق الموسم!",
+        description=f"تم جدولة **{rounds}** جولات. قدّم الجولات بـ `!تقدم` وشاهد الترتيب بـ `!ترتيب`.",
+        color=discord.Color.gold(),
+    )
+    await ctx.send(embed=embed)
+
+
+@bot.command(name="ترتيب", description="عرض ترتيب دوريك")
+@commands.cooldown(1, 5, commands.BucketType.user)
+async def standings_cmd(ctx):
+    team, _ = get_state(ctx.author)
+    if not team or not team["league_id"]:
+        embed = discord.Embed(title="❌ أنت لست في دوري!", color=discord.Color.red())
+        await ctx.send(embed=embed)
+        return
+    season = db.get_season(team["league_id"])
+    if not season or season["status"] != "active":
+        embed = discord.Embed(title="❌ لا يوجد موسم نشط!", color=discord.Color.red())
+        await ctx.send(embed=embed)
+        return
+    standings = json.loads(season["standings"])
+    teams = {t["id"]: t for t in db.get_league_teams(team["league_id"])}
+    rows = []
+    for tid, s in sorted(standings.items(), key=lambda kv: (kv[1]["Pts"], kv[1]["GF"] - kv[1]["GA"]), reverse=True):
+        name = teams.get(int(tid), {}).get("name", f"فريق {tid}")
+        rows.append(f"`{len(rows)+1}.` **{name}** — {s['Pts']}ن | {s['W']}ف/{s['D']}ت/{s['L']}خ | {s['GF']}-{s['GA']}")
+    e = discord.Embed(title=f"🏆 ترتيب الدوري (جولة {season['round']}/{season['total_rounds']})", color=discord.Color.gold())
+    e.description = "\n".join(rows) if rows else "لا يوجد"
+    await ctx.send(embed=e)
+
+
+@bot.command(name="تقدم", description="تقديم جولة في موسم الدوري")
+@commands.cooldown(1, 20, commands.BucketType.user)
+async def advance_cmd(ctx):
+    team, _ = get_state(ctx.author)
+    if not team or not team["league_id"]:
+        embed = discord.Embed(title="❌ أنت لست في دوري!", color=discord.Color.red())
+        await ctx.send(embed=embed)
+        return
+    res = db.advance_season(team["league_id"])
+    if res is None:
+        embed = discord.Embed(title="❌ لا يوجد موسم نشط!", color=discord.Color.red())
+        await ctx.send(embed=embed)
+        return
+    if res == "انتهى":
+        await ctx.send("🏁 انتهى الموسم! البطل توج باللقب 🏆")
+        return
+    teams = {t["id"]: t for t in db.get_league_teams(team["league_id"])}
+    lines = []
+    for a, b, ga, gb in res:
+        na = teams.get(a, {}).get("name", f"فريق {a}")
+        nb = teams.get(b, {}).get("name", f"فريق {b}")
+        lines.append(f"⚽ {na} **{ga}** - **{gb}** {nb}")
+    e = discord.Embed(title="⚽ نتائج الجولة", color=discord.Color.green())
+    e.description = "\n".join(lines)
+    await ctx.send(embed=e)
+
+
+@bot.command(name="مستواي", description="عرض ملف المدرب (مستوى/سمعة/رموز/ألقاب)")
+@commands.cooldown(1, 5, commands.BucketType.user)
+async def profile_cmd(ctx):
+    team, _ = get_state(ctx.author)
+    if not team:
+        embed = discord.Embed(title="❌ أنشئ فريقاً أولاً!", color=discord.Color.red())
+        await ctx.send(embed=embed)
+        return
+    e = discord.Embed(title=f"👤 ملف {team['name']}", color=discord.Color.blue())
+    e.add_field(name="⭐ المستوى", value=f"{team['level']}", inline=True)
+    e.add_field(name="🪙 الرموز", value=f"{team['tokens']}", inline=True)
+    e.add_field(name="📊 السمعة", value=f"{team['reputation']}", inline=True)
+    e.add_field(name="🏆 الألقاب", value=f"{team['titles']}", inline=True)
+    e.add_field(name="📈 السجل", value=f"{team['wins']}ف / {team['draws']}ت / {team['losses']}خ", inline=True)
+    e.add_field(name="💰 الميزانية", value=f"{team['budget']}م", inline=True)
+    await ctx.send(embed=e)
 
 
 # ---------------------------------------------------------------------------
@@ -876,18 +1054,41 @@ async def help_cmd(ctx):
         name="🎯 التكتيكات",
         value=(
             "`!تشكيل <4-3-3>` — ضبط التشكيل\n"
-            "`!خطة <هجومي/متوازن/دفاعي>` — ضبط الخطة\n"
+            "`!خطة <هجومي/متوازن/دفاعي>` — ضبط الخطة العامة\n"
+            "`!تكتيك` — 🎮 التكتيك الكامل (تمرير/ضغط/رقابة/إيقاع/مرتد/تسلل)\n"
             "`!خطتي` — عرض خطتك السرية"
         ),
         inline=False,
     )
 
     embed.add_field(
-        name="🏆 الدوريات",
+        name="🏗️ المنشآت والكشافة",
+        value=(
+            "`!منشأة` — 🎮 الملعب/التدريب/الطبي/الشباب\n"
+            "`!كشاف` — استقدام لاعب حر (10 رموز)\n"
+            "`!راحة` — استعادة جاهزية اللاعبين"
+        ),
+        inline=False,
+    )
+
+    embed.add_field(
+        name="🏆 الدوريات والمواسم",
         value=(
             "`!دوري_جديد <اسم>` — إنشاء دوري\n"
             "`!انضمام <رقم>` — الانضمام لدوري\n"
-            "`!دوريات` — قائمة الدوريات"
+            "`!دوريات` — قائمة الدوريات\n"
+            "`!موسم` — بدء موسم لدوريك\n"
+            "`!تقدم` — تقديم جولة\n"
+            "`!ترتيب` — ترتيب الدوري"
+        ),
+        inline=False,
+    )
+
+    embed.add_field(
+        name="👤 المدرب",
+        value=(
+            "`!مستواي` — ملف المدرب (مستوى/سمعة/رموز/ألقاب)\n"
+            "`!لاعب <رقم>` — بطاقة اللاعب (الخصائص الست)"
         ),
         inline=False,
     )
