@@ -12,16 +12,17 @@ POS_EMOJI = {"GK": "🧤", "DEF": "🛡️", "MID": "🎽", "ATT": "⚽"}
 # Embed builders
 # ---------------------------------------------------------------------------
 def team_embed(team, players):
+    g = lambda k, d=0: team[k] if k in team.keys() else d
     e = discord.Embed(title=f"⚽ {team['name']}", color=discord.Color.green())
-    e.add_field(name="💰 الميزانية", value=f"{team['budget']}م", inline=True)
-    e.add_field(name="🪙 الرموز", value=f"{team['tokens']}", inline=True)
-    e.add_field(name="⭐ المستوى", value=f"{team['level']}", inline=True)
-    e.add_field(name="📊 السمعة", value=f"{team['reputation']}", inline=True)
-    e.add_field(name="🏆 الألقاب", value=f"{team['titles']}", inline=True)
-    e.add_field(name="📈 السجل", value=f"{team['wins']}ف/{team['draws']}ت/{team['losses']}خ", inline=True)
-    e.add_field(name="📐 التشكيل", value=team["formation"], inline=True)
-    e.add_field(name="🎯 الخطة", value=team["tactic"], inline=True)
-    e.add_field(name="🏋️ التدريب", value=f"{team['training_invest']} نقطة", inline=True)
+    e.add_field(name="💰 الميزانية", value=f"{g('budget')}م", inline=True)
+    e.add_field(name="🪙 الرموز", value=f"{g('tokens')}", inline=True)
+    e.add_field(name="⭐ المستوى", value=f"{g('level', 1)}", inline=True)
+    e.add_field(name="📊 السمعة", value=f"{g('reputation')}", inline=True)
+    e.add_field(name="🏆 الألقاب", value=f"{g('titles')}", inline=True)
+    e.add_field(name="📈 السجل", value=f"{g('wins')}ف/{g('draws')}ت/{g('losses')}خ", inline=True)
+    e.add_field(name="📐 التشكيل", value=g("formation", "4-3-3"), inline=True)
+    e.add_field(name="🎯 الخطة", value=g("tactic", "متوازن"), inline=True)
+    e.add_field(name="🏋️ التدريب", value=f"{g('training_invest')} نقطة", inline=True)
 
     avg_cond = round(sum(p["condition"] for p in players) / len(players)) if players else 0
     e.add_field(name="🔋 متوسط الجاهزية", value=f"{avg_cond}%", inline=True)
@@ -774,19 +775,21 @@ class FacilityUpgradeButton(discord.ui.Button):
         fac = db.get_facilities(team["id"])
         cur = fac[key]
         if cur >= len(spec["levels"]):
-            super().__init__(label=f"{spec['emoji']} {spec['name']} (ممتلئ)", style=discord.ButtonStyle.secondary, disabled=True)
+            super().__init__(label=f"{spec['emoji']} {spec['name']} (ممتلئ)", style=discord.ButtonStyle.secondary,
+                             disabled=True, custom_id=f"fac_{key}")
         else:
             cost = spec["levels"][cur]["cost"]
-            super().__init__(label=f"{spec['emoji']} {spec['name']} → {cost}م", style=discord.ButtonStyle.success)
+            super().__init__(label=f"{spec['emoji']} {spec['name']} → {cost}م",
+                             style=discord.ButtonStyle.success, custom_id=f"fac_{key}")
 
     async def callback(self, interaction: discord.Interaction):
-        ok, info = db.upgrade_facility(self.owner_id_team(), self.key)
+        ok, info = db.upgrade_facility(db.get_team_by_owner(str(self.owner_id))["id"], self.key)
+        if not ok:
+            await interaction.response.send_message(f"❌ {info}", ephemeral=True)
+            return
         await interaction.response.edit_message(
             embed=facilities_embed(db.get_team_by_owner(str(self.owner_id))),
             view=FacilitiesView(self.owner_id))
-
-    def owner_id_team(self):
-        return db.get_team_by_owner(str(self.owner_id))["id"]
 
 
 class FacilitiesView(OwnedView):
@@ -871,6 +874,205 @@ class SeasonView(OwnedView):
         await interaction.response.edit_message(content=None, embed=e, view=self)
 
 
+# ---------------------------------------------------------------------------
+# CLUB / LEAGUE SELECTION (real clubs, no typing names)
+# ---------------------------------------------------------------------------
+class RealLeagueSelect(discord.ui.Select):
+    def __init__(self, owner_id, mode, league_id=None):
+        self.owner_id = owner_id
+        self.mode = mode
+        self.league_id = league_id
+        options = [
+            discord.SelectOption(label=l["name"], emoji=l["emoji"], value=str(l["id"]))
+            for l in market_data.LEAGUES
+        ]
+        super().__init__(placeholder="اختر الدوري الحقيقي...", options=options, custom_id=f"rls_{mode}")
+
+    async def callback(self, interaction: discord.Interaction):
+        lid = int(self.values[0])
+        owner = str(self.owner_id)
+        team = db.get_team_by_owner(owner)
+        if self.mode == "create":
+            clubs = db.available_clubs(lid)
+            if not clubs:
+                await interaction.response.send_message("❌ لا توجد أندية متاحة في هذا الدوري.", ephemeral=True)
+                return
+            view = OwnedView(self.owner_id)
+            view.add_item(ClubSelect(self.owner_id, lid, "create"))
+            e = discord.Embed(title=f"🏟️ اختر ناديك في {db.get_league(lid)['name']}", color=discord.Color.green())
+            e.description = "هذه الأندية متاحة (لم يأخذها أحد):"
+            await interaction.response.edit_message(embed=e, view=view)
+        elif self.mode == "leaguecreate":
+            if team and team["real_league_id"] == lid:
+                rl_name = db.get_league(lid)["name"]
+                l_id = db.create_league(f"دوري {rl_name}", owner, lid)
+                db.update_team(team["id"], league_id=l_id)
+                e = discord.Embed(title="🏆 تم إنشاء الدوري!", color=discord.Color.gold(),
+                                  description=f"**دوري {rl_name}** (رقم {l_id})\nانضم زملاؤك عبر `!انضمام {l_id}`.")
+                await interaction.response.edit_message(embed=e, view=None)
+                return
+            clubs = db.available_clubs(lid)
+            if not clubs:
+                await interaction.response.send_message("❌ لا توجد أندية متاحة في هذا الدوري.", ephemeral=True)
+                return
+            view = OwnedView(self.owner_id)
+            view.add_item(ClubSelect(self.owner_id, lid, "leaguecreate"))
+            e = discord.Embed(title=f"🏆 اختر ناديك في {db.get_league(lid)['name']} لإنشاء الدوري",
+                              color=discord.Color.gold())
+            e.description = "سيُنشأ الدوري وستنضم إليه بهذا النادي."
+            await interaction.response.edit_message(embed=e, view=view)
+
+
+class ClubSelect(discord.ui.Select):
+    def __init__(self, owner_id, real_league_id, mode="create", league_id=None, page=0):
+        self.owner_id = owner_id
+        self.real_league_id = real_league_id
+        self.mode = mode
+        self.league_id = league_id
+        self.page = page
+        clubs = db.available_clubs(real_league_id)
+        per_page = 20
+        start = page * per_page
+        slice_clubs = clubs[start:start + per_page]
+        options = [discord.SelectOption(label=c["name"], value=str(c["id"])) for c in slice_clubs]
+        if len(clubs) > start + per_page:
+            options.append(discord.SelectOption(label="⬇️ التالي", value="next"))
+        if page > 0:
+            options.insert(0, discord.SelectOption(label="⬆️ السابق", value="prev"))
+        options.append(discord.SelectOption(label="🔙 رجوع", value="back"))
+        super().__init__(placeholder="اختر ناديك...", options=options,
+                         custom_id=f"cs_{mode}_{real_league_id}_{page}")
+
+    async def callback(self, interaction: discord.Interaction):
+        val = self.values[0]
+        if val == "back":
+            view = OwnedView(self.owner_id)
+            view.add_item(RealLeagueSelect(self.owner_id, self.mode, self.league_id))
+            await interaction.response.edit_message(content="اختر الدوري:", view=view)
+            return
+        if val == "next":
+            view = OwnedView(self.owner_id)
+            view.add_item(ClubSelect(self.owner_id, self.real_league_id, self.mode, self.league_id, self.page + 1))
+            await interaction.response.edit_message(view=view)
+            return
+        if val == "prev":
+            view = OwnedView(self.owner_id)
+            view.add_item(ClubSelect(self.owner_id, self.real_league_id, self.mode, self.league_id, self.page - 1))
+            await interaction.response.edit_message(view=view)
+            return
+        cid = int(val)
+        owner = str(self.owner_id)
+        team = db.get_team_by_owner(owner)
+        if self.mode == "create":
+            if db.club_taken(cid):
+                await interaction.response.send_message("❌ هذا النادي مأخوذ بالفعل من لاعب آخر.", ephemeral=True)
+                return
+            tid, budget = db.create_team_with_club(cid, owner)
+            db.create_coach(owner, str(interaction.user), tid)
+            club = db.get_club(cid)
+            e = discord.Embed(title="✅ تم إنشاء الفريق!", color=discord.Color.green(),
+                              description=(f"**{club['name']}** ({db.get_league(club['league_id'])['name']})\n"
+                                           f"👥 24 لاعباً في تشكيلتك\n💰 الميزانية: {budget}م (تعويض للأندية الضعيفة)"))
+            e.set_footer(text="اكتب !فريقي لفتح لوحة التحكم")
+            await interaction.response.edit_message(embed=e, view=None)
+        elif self.mode == "leaguecreate":
+            if db.club_taken(cid):
+                await interaction.response.send_message("❌ هذا النادي مأخوذ بالفعل.", ephemeral=True)
+                return
+            if not team:
+                db.create_team_with_club(cid, owner)
+                db.create_coach(owner, str(interaction.user), db.get_team_by_owner(owner)["id"])
+            elif team["club_id"] != cid:
+                await interaction.response.send_message(
+                    "❌ لديك فريق باسم آخر. استقل بـ !فريقي ← استقالة ثم أعد المحاولة.", ephemeral=True)
+                return
+            rl_name = db.get_league(self.real_league_id)["name"]
+            lid = db.create_league(f"دوري {rl_name}", owner, self.real_league_id)
+            db.update_team(db.get_team_by_owner(owner)["id"], league_id=lid)
+            e = discord.Embed(title="🏆 تم إنشاء الدوري!", color=discord.Color.gold(),
+                              description=f"**دوري {rl_name}** (رقم {lid})\nانضم زملاؤك عبر `!انضمام {lid}` واختاروا أنديتهم.")
+            await interaction.response.edit_message(embed=e, view=None)
+        elif self.mode == "join":
+            league = db.get_league(self.league_id)
+            if not league:
+                await interaction.response.send_message("❌ الدوري غير موجود.", ephemeral=True)
+                return
+            rl = league["real_league_id"]
+            if db.get_club(cid)["league_id"] != rl:
+                await interaction.response.send_message("❌ هذا النادي ليس في دوري هذه المسابقة.", ephemeral=True)
+                return
+            if db.club_taken(cid):
+                await interaction.response.send_message("❌ هذا النادي مأخوذ بالفعل.", ephemeral=True)
+                return
+            if not team:
+                db.create_team_with_club(cid, owner)
+                db.create_coach(owner, str(interaction.user), db.get_team_by_owner(owner)["id"])
+            elif team["club_id"] != cid:
+                await interaction.response.send_message("❌ لديك فريق باسم آخر. استقل أولاً.", ephemeral=True)
+                return
+            db.join_league(self.league_id, owner, cid)
+            e = discord.Embed(title="✅ تم الانضمام!", color=discord.Color.green(),
+                              description=f"انضممت إلى الدوري رقم **{self.league_id}** بفريق **{db.get_club(cid)['name']}**.")
+            await interaction.response.edit_message(embed=e, view=None)
+
+
+class CreateTeamView(OwnedView):
+    @discord.ui.button(label="➕ إنشاء فريق", emoji="🏟️", style=discord.ButtonStyle.success)
+    async def start(self, interaction: discord.Interaction, button: discord.ui.Button):
+        view = OwnedView(self.owner_id)
+        view.add_item(RealLeagueSelect(self.owner_id, "create"))
+        e = discord.Embed(title="🏟️ اختر الدوري ثم ناديك", color=discord.Color.green())
+        e.description = "ستحصل على تشكيلة النادي الحقيقية (24 لاعباً). الأندية الضعيفة تحصل على ميزانية أكبر."
+        await interaction.response.edit_message(embed=e, view=view)
+
+
+class LeaguePickSelect(discord.ui.Select):
+    def __init__(self, owner_id):
+        self.owner_id = owner_id
+        leagues = db.get_leagues()
+        options = [
+            discord.SelectOption(label=f"#{l['id']} - {l['name']}",
+                                 description=f"الأعضاء: {len(json.loads(l['members']))}", value=str(l["id"]))
+            for l in leagues[:25]
+        ]
+        if not options:
+            options = [discord.SelectOption(label="لا توجد دوريات", value="none")]
+        super().__init__(placeholder="اختر دوريًا...", options=options, custom_id="lps")
+
+    async def callback(self, interaction: discord.Interaction):
+        if self.values[0] == "none":
+            await interaction.response.send_message("لا توجد دوريات.", ephemeral=True)
+            return
+        lid = int(self.values[0])
+        league = db.get_league(lid)
+        rl = league["real_league_id"]
+        view = OwnedView(self.owner_id)
+        view.add_item(ClubSelect(self.owner_id, rl, "join", league_id=lid))
+        e = discord.Embed(title=f"🏟️ اختر ناديك في دوري #{lid}", color=discord.Color.green())
+        e.description = "اختر نادياً متاحاً (لم يأخذه أحد):"
+        await interaction.response.edit_message(embed=e, view=view)
+
+
+class LeagueMenuView(OwnedView):
+    @discord.ui.button(label="إنشاء دوري", emoji="➕", style=discord.ButtonStyle.success)
+    async def create(self, interaction: discord.Interaction, button: discord.ui.Button):
+        view = OwnedView(self.owner_id)
+        view.add_item(RealLeagueSelect(self.owner_id, "leaguecreate"))
+        e = discord.Embed(title="🏆 اختر الدوري الحقيقي للمسابقة", color=discord.Color.gold())
+        e.description = "ستنشئ دوريًا تنافس فيه أنت وزملاؤك بأنديتكم الحقيقية."
+        await interaction.response.edit_message(embed=e, view=view)
+
+    @discord.ui.button(label="انضمام لدوري", emoji="🔗", style=discord.ButtonStyle.primary)
+    async def join(self, interaction: discord.Interaction, button: discord.ui.Button):
+        leagues = db.get_leagues()
+        if not leagues:
+            await interaction.response.send_message("لا توجد دوريات. أنشئ واحداً!", ephemeral=True)
+            return
+        view = OwnedView(self.owner_id)
+        view.add_item(LeaguePickSelect(self.owner_id))
+        await interaction.response.edit_message(content="🏆 اختر دوريًا للانضمام:", view=view)
+
+
 class TeamPanel(OwnedView):
     @discord.ui.button(label="سوق", emoji="🛒", style=discord.ButtonStyle.success, row=0)
     async def buy(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -928,7 +1130,7 @@ class TeamPanel(OwnedView):
     @discord.ui.button(label="الدوريات", emoji="🏆", style=discord.ButtonStyle.primary, row=2)
     async def leagues(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_message(
-            "🏆 إدارة الدوريات:", view=LeagueView(self.owner_id), ephemeral=True
+            "🏆 إدارة الدوريات:", view=LeagueMenuView(self.owner_id), ephemeral=True
         )
 
     @discord.ui.button(label="تحديث", emoji="🔄", style=discord.ButtonStyle.secondary, row=2)

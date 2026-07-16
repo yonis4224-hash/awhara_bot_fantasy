@@ -115,9 +115,9 @@ async def on_guild_join(guild):
         description=(
             "أقوى بوت لإدارة فرق كرة القدم في ديسكورد.\n\n"
             "**البداية السريعة:**\n"
-            "1️⃣ اكتب `!انشاء <اسم فريقك>` لإنشاء فريقك\n"
+            "1️⃣ اكتب `!انشاء` لاختيار دوري ونادٍ حقيقي (تشكيلة 24 لاعباً)\n"
             "2️⃣ اكتب `!فريقي` لفتح لوحة التحكم بالأزرار\n"
-            "3️⃣ اكتب `!سوق` لتصفح اللاعبين بالدوريات والأنشية\n\n"
+            "3️⃣ اكتب `!دوري_جديد انجليزي` لإنشاء دوري، و`!انضمام <رقم>` لزملائك\n\n"
             "اكتب `!مساعدة` لعرض كل الأوامر."
         ),
         color=discord.Color.green(),
@@ -167,9 +167,9 @@ async def on_command_error(ctx, error):
 # ---------------------------------------------------------------------------
 # TEAM commands
 # ---------------------------------------------------------------------------
-@bot.command(name="انشاء", description="إنشاء فريق جديد")
+@bot.command(name="انشاء", description="إنشاء فريق باختيار نادٍ حقيقي")
 @commands.cooldown(1, 10, commands.BucketType.user)
-async def create_team(ctx, *, name):
+async def create_team(ctx):
     if db.get_coach(str(ctx.author.id)):
         embed = discord.Embed(
             title="❌ لديك فريق بالفعل!",
@@ -179,32 +179,12 @@ async def create_team(ctx, *, name):
         await ctx.send(embed=embed)
         return
 
-    tid = db.create_team(name, str(ctx.author.id))
-    db.create_coach(str(ctx.author.id), str(ctx.author), tid)
-    players = db.team_players(tid)
-
     embed = discord.Embed(
-        title="✅ تم إنشاء الفريق!",
-        description=f"مرحباً بك في **{name}**! تم تعاقدك مع **{len(players)}** لاعبين تلقائياً.",
+        title="🏟️ إنشاء فريقك",
+        description="اختر الدوري الحقيقي ثم النادي، لتحصل على تشكيلته الحقيقية (24 لاعباً). الأندية الضعيفة تحصل على ميزانية أكبر.",
         color=discord.Color.green(),
     )
-    embed.add_field(
-        name="💰 الميزانية",
-        value=f"{game_data.CONFIG['START_BUDGET']}م",
-        inline=True,
-    )
-    embed.add_field(
-        name="🟢 الخبرة",
-        value=f"{game_data.CONFIG['START_XP']} نقطة",
-        inline=True,
-    )
-    embed.add_field(
-        name="👥 اللاعبون",
-        value=f"{len(players)} لاعب في فريقك",
-        inline=True,
-    )
-    embed.set_footer(text="اكتب !فريقي لفتح لوحة التحكم بالأزرار | !سوق للسوق")
-    await ctx.send(embed=embed)
+    await ctx.send(embed=embed, view=views.CreateTeamView(ctx.author.id), ephemeral=True)
 
 
 @bot.command(name="فريقي", description="عرض فريقك")
@@ -219,7 +199,7 @@ async def my_team(ctx):
         )
         await ctx.send(embed=embed)
         return
-    await ctx.send(embed=views.team_embed(team, players), view=views.TeamPanel(ctx.author.id))
+    await ctx.send(embed=views.team_embed(team, players), view=views.TeamPanel(ctx.author.id), ephemeral=True)
 
 
 # ---------------------------------------------------------------------------
@@ -562,43 +542,65 @@ async def my_plan(ctx):
 # ---------------------------------------------------------------------------
 # LEAGUE commands
 # ---------------------------------------------------------------------------
-@bot.command(name="دوري_جديد", description="إنشاء دوري جديد")
+def parse_real_league(arg):
+    if arg is None:
+        return None
+    arg = str(arg).strip()
+    if arg.isdigit():
+        for l in market_data.LEAGUES:
+            if l["id"] == int(arg):
+                return l
+    for l in market_data.LEAGUES:
+        if arg in l["name"] or l["name"] in arg:
+            return l
+    return None
+
+
+@bot.command(name="دوري_جديد", description="إنشاء دوري مرتبط بدوري حقيقي")
 @commands.cooldown(1, 10, commands.BucketType.user)
-async def new_league(ctx, *, name):
-    lid = db.create_league(name, str(ctx.author.id))
+async def new_league(ctx, *, arg=None):
     team = db.get_team_by_owner(str(ctx.author.id))
-    if team:
-        db.update_team(team["id"], league_id=lid)
+    if arg:
+        rl = parse_real_league(arg)
+        if not rl:
+            await ctx.send(embed=discord.Embed(title="❌ الدوري غير معروف!",
+                                               description="الدوريات: " + " | ".join(l["name"] for l in market_data.LEAGUES),
+                                               color=discord.Color.red()))
+            return
+        if team and team["real_league_id"] == rl["id"]:
+            lid = db.create_league(f"دوري {rl['name']}", str(ctx.author.id), rl["id"])
+            db.update_team(team["id"], league_id=lid)
+            await ctx.send(embed=discord.Embed(title="🏆 تم إنشاء الدوري!",
+                                               description=f"**دوري {rl['name']}** (رقم {lid})\nانضم زملاؤك بـ `!انضمام {lid}` واختاروا أنديتهم.",
+                                               color=discord.Color.gold()))
+            return
+        view = views.OwnedView(ctx.author.id)
+        view.add_item(views.ClubSelect(ctx.author.id, rl["id"], "leaguecreate"))
+        e = discord.Embed(title=f"🏆 اختر ناديك في {rl['name']} لإنشاء الدوري",
+                          description="ستنشئ الدوري وتنضم إليه بهذا النادي. زملاؤك سينضمون بأنديتهم.",
+                          color=discord.Color.gold())
+        await ctx.send(embed=e, view=view, ephemeral=True)
+        return
+    view = views.OwnedView(ctx.author.id)
+    view.add_item(views.RealLeagueSelect(ctx.author.id, "leaguecreate"))
+    e = discord.Embed(title="🏆 اختر الدوري الحقيقي للمسابقة", color=discord.Color.gold())
+    e.description = "ستنشئ دوريًا تنافس فيه أنت وزملاؤك بأنديتكم الحقيقية."
+    await ctx.send(embed=e, view=view, ephemeral=True)
 
-    embed = discord.Embed(
-        title="🏆 تم إنشاء الدوري!",
-        description=f"**{name}** (رقم {lid})\nشارك الآخرون بـ `!انضمام {lid}`",
-        color=discord.Color.gold(),
-    )
-    await ctx.send(embed=embed)
 
-
-@bot.command(name="انضمام", description="الانضمام إلى دوري")
+@bot.command(name="انضمام", description="الانضمام إلى دوري واختيار نادٍ")
 @commands.cooldown(1, 10, commands.BucketType.user)
 async def join_l(ctx, lid: int):
-    if not db.join_league(lid, str(ctx.author.id)):
-        embed = discord.Embed(
-            title="❌ الدوري غير موجود!",
-            color=discord.Color.red(),
-        )
-        await ctx.send(embed=embed)
+    league = db.get_league(lid)
+    if not league:
+        await ctx.send(embed=discord.Embed(title="❌ الدوري غير موجود!", color=discord.Color.red()))
         return
-
-    team = db.get_team_by_owner(str(ctx.author.id))
-    if team:
-        db.update_team(team["id"], league_id=lid)
-
-    embed = discord.Embed(
-        title="✅ تم الانضمام!",
-        description=f"انضممت إلى الدوري رقم **{lid}**",
-        color=discord.Color.green(),
-    )
-    await ctx.send(embed=embed)
+    rl = league["real_league_id"]
+    view = views.OwnedView(ctx.author.id)
+    view.add_item(views.ClubSelect(ctx.author.id, rl, "join", league_id=lid))
+    e = discord.Embed(title=f"🏟️ اختر ناديك في دوري #{lid}", color=discord.Color.green())
+    e.description = "اختر نادياً متاحاً (لم يأخذه أحد بعد):"
+    await ctx.send(embed=e, view=view, ephemeral=True)
 
 
 @bot.command(name="دوريات", description="عرض جميع الدوريات")
@@ -616,9 +618,11 @@ async def list_leagues(ctx):
 
     embed = discord.Embed(title="🏆 الدوريات", color=discord.Color.gold())
     for l in leagues:
-        m = len(__import__("json").loads(l["members"]))
+        m = len(json.loads(l["members"]))
+        rl = db.get_league(l["real_league_id"])
+        rl_name = f" ({rl['name']})" if rl else ""
         embed.add_field(
-            name=f"#{l['id']} - {l['name']}",
+            name=f"#{l['id']} - {l['name']}{rl_name}",
             value=f"الأعضاء: {m}",
             inline=True,
         )
@@ -1023,8 +1027,8 @@ async def help_cmd(ctx):
     embed.add_field(
         name="⚽ إنشاء الفريق",
         value=(
-            "`!انشاء <اسم>` — إنشاء فريق جديد\n"
-            "`!فريقي` — 🎮 لوحة التحكم بالأزرار (شراء/تطوير/تشكيل/بيع/طرد/استقالة/تحدي/دوريات)"
+            "`!انشاء` — 🎮 اختر دوريًا وناديًا حقيقيًا (تشكيلة 24 لاعباً)\n"
+            "`!فريقي` — 🎮 لوحة التحكم بالأزرار (خاصة بك وحدك، لا يراها غيرك)"
         ),
         inline=False,
     )
@@ -1074,8 +1078,8 @@ async def help_cmd(ctx):
     embed.add_field(
         name="🏆 الدوريات والمواسم",
         value=(
-            "`!دوري_جديد <اسم>` — إنشاء دوري\n"
-            "`!انضمام <رقم>` — الانضمام لدوري\n"
+            "`!دوري_جديد <دوري>` — إنشاء دوري حقيقي (مثال: انجليزي/ايطالي/الماني)\n"
+            "`!انضمام <رقم>` — الانضمام لدوري واختيار نادٍ\n"
             "`!دوريات` — قائمة الدوريات\n"
             "`!موسم` — بدء موسم لدوريك\n"
             "`!تقدم` — تقديم جولة\n"

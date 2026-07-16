@@ -200,25 +200,20 @@ def generate_player(name, pos, base, club_id, league_id, age=None):
 def generate_players_data():
     players = []
     pid = 1
+    # تشكيلة واقعية: 3 حراس، 8 دفاع، 8 وسط، 5 هجوم = 24 لاعب
+    squad_template = ["GK"] * 3 + ["DEF"] * 8 + ["MID"] * 8 + ["ATT"] * 5
     for club in CLUBS:
         used = set()
-        for _ in range(8):
-            while True:
+        for pos in squad_template:
+            attempts = 0
+            while attempts < 50:
+                attempts += 1
                 first = random.choice(FIRST_NAMES)
                 last = random.choice(LAST_NAMES)
                 name = f"{first} {last}"
                 if name not in used:
                     used.add(name)
                     break
-            roll = random.random()
-            if roll < 0.125:
-                pos = "GK"
-            elif roll < 0.5:
-                pos = "DEF"
-            elif roll < 0.85:
-                pos = "MID"
-            else:
-                pos = "ATT"
             p = generate_player(name, pos, None, club["id"], club["league_id"])
             p["id"] = pid
             players.append(p)

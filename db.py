@@ -41,6 +41,8 @@ def init_db():
         tactic TEXT DEFAULT 'متوازن',
         training_invest INTEGER DEFAULT 0,
         league_id INTEGER DEFAULT 0,
+        club_id INTEGER DEFAULT 0,
+        real_league_id INTEGER DEFAULT 0,
         tokens INTEGER DEFAULT 50,
         level INTEGER DEFAULT 1,
         reputation INTEGER DEFAULT 0,
@@ -87,6 +89,7 @@ def init_db():
         name TEXT,
         owner_id TEXT,
         members TEXT DEFAULT '[]',
+        real_league_id INTEGER DEFAULT 0,
         status TEXT DEFAULT 'open'
     )""")
     c.execute("""
@@ -152,6 +155,9 @@ def init_db():
     _add_col("teams", "offside", "TEXT", "'لا'")
     _add_col("teams", "captain_pid", "INTEGER", 0)
     _add_col("teams", "setpiece_pid", "INTEGER", 0)
+    _add_col("teams", "club_id", "INTEGER", 0)
+    _add_col("teams", "real_league_id", "INTEGER", 0)
+    _add_col("leagues", "real_league_id", "INTEGER", 0)
     for col in ["pac", "sho", "pas", "dri", "def", "phy", "ovr", "age", "condition", "morale", "foot", "work_rate", "special"]:
         _add_col("players", col, "INTEGER" if col in ("pac","sho","pas","dri","def","phy","ovr","age","condition","morale") else "TEXT", "''" if col in ("foot","work_rate","special") else 70 if col != "condition" else 100)
 
@@ -253,22 +259,75 @@ def create_coach(discord_id, username, team_id):
     CONN.commit()
 
 
-def create_team(name, owner_id):
+def create_team(name, owner_id, club_id=0, real_league_id=0):
     c = CONN.cursor()
     c.execute(
-        "INSERT INTO teams (name, owner_id, budget, xp, tokens) VALUES (?,?,?,?,?)",
-        (name, owner_id, game_data.CONFIG["START_BUDGET"], game_data.CONFIG["START_XP"], game_data.CONFIG["START_TOKENS"]),
+        "INSERT INTO teams (name, owner_id, budget, xp, tokens, club_id, real_league_id) VALUES (?,?,?,?,?,?,?)",
+        (name, owner_id, game_data.CONFIG["START_BUDGET"], game_data.CONFIG["START_XP"],
+         game_data.CONFIG["START_TOKENS"], club_id, real_league_id),
     )
     CONN.commit()
     tid = c.lastrowid
     c.execute("INSERT OR IGNORE INTO facilities (team_id) VALUES (?)", (tid,))
     CONN.commit()
-    available = c.execute("SELECT id FROM players WHERE team_id IS NULL ORDER BY RANDOM() LIMIT 11").fetchall()
-    for row in available:
-        c.execute("UPDATE players SET team_id=? WHERE id=?", (tid, row["id"]))
-        add_history(row["id"], "تعاقد", 0, owner_id, str(tid))
+    if club_id:
+        c.execute("UPDATE players SET team_id=? WHERE club_id=?", (tid, club_id))
+        for row in c.execute("SELECT id FROM players WHERE club_id=?", (club_id,)).fetchall():
+            add_history(row["id"], "تعاقد", 0, owner_id, str(tid))
+    else:
+        available = c.execute("SELECT id FROM players WHERE team_id IS NULL ORDER BY RANDOM() LIMIT 11").fetchall()
+        for row in available:
+            c.execute("UPDATE players SET team_id=? WHERE id=?", (tid, row["id"]))
+            add_history(row["id"], "تعاقد", 0, owner_id, str(tid))
     CONN.commit()
     return tid
+
+
+def club_taken(club_id):
+    c = CONN.cursor()
+    row = c.execute("SELECT id FROM teams WHERE club_id=?", (club_id,)).fetchone()
+    return row is not None
+
+
+def club_strength(club_id):
+    c = CONN.cursor()
+    rows = c.execute("SELECT ovr FROM players WHERE club_id=?", (club_id,)).fetchall()
+    if not rows:
+        return 80
+    return sum(r["ovr"] for r in rows) / len(rows)
+
+
+def budget_for_club(club_id):
+    avg = club_strength(club_id)
+    # النادي الضعيف يحصل على ميزانية أكبر تعويضاً
+    return max(150, min(650, round(150 + (88 - avg) * 24)))
+
+
+def create_team_with_club(club_id, owner_id):
+    club = get_club(club_id)
+    budget = budget_for_club(club_id)
+    tid = create_team(club["name"], owner_id, club_id, club["league_id"])
+    c = CONN.cursor()
+    c.execute("UPDATE teams SET budget=? WHERE id=?", (budget, tid))
+    CONN.commit()
+    return tid, budget
+
+
+def available_clubs(real_league_id=None):
+    c = CONN.cursor()
+    taken = set(r[0] for r in c.execute("SELECT club_id FROM teams WHERE club_id!=0").fetchall())
+    res = [
+        cl for cl in market_data.CLUBS
+        if cl["id"] not in taken and (real_league_id is None or cl["league_id"] == real_league_id)
+    ]
+    return res
+
+
+def get_team_club(team_id):
+    team = get_team(team_id)
+    if not team or not team["club_id"]:
+        return None
+    return get_club(team["club_id"])
 
 
 def get_team(team_id):
@@ -373,6 +432,13 @@ def resign(discord_id):
     c.execute("DELETE FROM coaches WHERE discord_id=?", (discord_id,))
     CONN.commit()
     return True
+
+
+def get_league_real_league(league_id):
+    lg = get_league(league_id)
+    if not lg:
+        return None
+    return lg["real_league_id"]
 
 
 # ---------------------------------------------------------------------------
@@ -541,15 +607,15 @@ def get_leagues():
     return c.fetchall()
 
 
-def create_league(name, owner_id):
+def create_league(name, owner_id, real_league_id=0):
     c = CONN.cursor()
-    c.execute("INSERT INTO leagues (name, owner_id, members) VALUES (?,?,?)",
-              (name, owner_id, json.dumps([owner_id])))
+    c.execute("INSERT INTO leagues (name, owner_id, members, real_league_id) VALUES (?,?,?,?)",
+              (name, owner_id, json.dumps([owner_id]), real_league_id))
     CONN.commit()
     return c.lastrowid
 
 
-def join_league(league_id, discord_id):
+def join_league(league_id, discord_id, club_id=None):
     c = CONN.cursor()
     c.execute("SELECT * FROM leagues WHERE id=?", (league_id,))
     row = c.fetchone()
@@ -559,7 +625,15 @@ def join_league(league_id, discord_id):
     if discord_id not in members:
         members.append(discord_id)
         c.execute("UPDATE leagues SET members=? WHERE id=?", (json.dumps(members), league_id))
-        CONN.commit()
+    if club_id:
+        t = get_team_by_owner(discord_id)
+        if t:
+            c.execute("UPDATE teams SET league_id=? WHERE id=?", (league_id, t["id"]))
+    else:
+        t = get_team_by_owner(discord_id)
+        if t:
+            c.execute("UPDATE teams SET league_id=? WHERE id=?", (league_id, t["id"]))
+    CONN.commit()
     return True
 
 
