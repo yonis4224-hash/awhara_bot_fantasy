@@ -1,17 +1,31 @@
 import os
-import asyncio
-import traceback
+import logging
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import discord
 from discord.ext import commands
-from discord import app_commands
+
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
 
 import db
 import engine
 import game_data
 import views
+
+# ---------------------------------------------------------------------------
+# Logging (professional structured logging instead of print)
+# ---------------------------------------------------------------------------
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+log = logging.getLogger("ohara")
 
 
 # ---------------------------------------------------------------------------
@@ -100,12 +114,12 @@ async def on_ready():
     await bot.change_presence(
         activity=discord.Activity(type=discord.ActivityType.playing, name="⚽ أوهارا فانتزب")
     )
-    print(f"✅ أوهارا المدرب الأفضل جاهز: {bot.user}")
-    try:
-        synced = await bot.tree.sync()
-        print(f"✅ Slash commands synced: {len(synced)}")
-    except Exception as e:
-        print(f"❌ Sync failed: {e}")
+    log.info("أوهارا جاهز: %s (id=%s) في %d سيرفر", bot.user, bot.user.id, len(bot.guilds))
+
+
+@bot.event
+async def on_error(event, *args, **kwargs):
+    log.exception("خطأ غير معالج في الحدث: %s", event)
 
 
 @bot.event
@@ -123,14 +137,20 @@ async def on_guild_join(guild):
         color=discord.Color.green(),
     )
     embed.set_footer(text="أوهارا فانتزب — مدربك الرقمي الأفضل")
-    for ch in guild.text_channels:
-        if ch.permissions_for(guild.me).send_messages:
-            await ch.send(embed=embed)
-            break
+    target = guild.system_channel
+    if not target or not target.permissions_for(guild.me).send_messages:
+        target = next((ch for ch in guild.text_channels
+                       if ch.permissions_for(guild.me).send_messages), None)
+    if target:
+        try:
+            await target.send(embed=embed)
+        except discord.HTTPException:
+            log.warning("تعذّر إرسال رسالة الترحيب في السيرفر %s", guild.id)
 
 
 @bot.event
 async def on_command_error(ctx, error):
+    error = getattr(error, "original", error)
     if isinstance(error, commands.CommandOnCooldown):
         embed = discord.Embed(
             title="⏱️ تهدأ شوي!",
@@ -152,16 +172,23 @@ async def on_command_error(ctx, error):
             color=discord.Color.red(),
         )
         await ctx.send(embed=embed)
-    elif isinstance(error, commands.CommandNotFound):
-        pass
-    else:
-        embed = discord.Embed(
-            title="❌ خطأ غير متوقع",
-            description=str(error)[:1000],
+    elif isinstance(error, (commands.CheckFailure, commands.NoPrivateMessage, commands.DisabledCommand)):
+        await ctx.send(embed=discord.Embed(
+            title="🚫 غير مسموح",
+            description="لا يمكنك استخدام هذا الأمر هنا.",
             color=discord.Color.red(),
-        )
-        await ctx.send(embed=embed)
-        traceback.print_exception(type(error), error, error.__traceback__)
+        ))
+    elif isinstance(error, commands.CommandNotFound):
+        return
+    else:
+        cmd = ctx.command.name if ctx.command else "?"
+        log.exception("خطأ في الأمر '%s' (المستخدم %s): %s", cmd, ctx.author.id, error,
+                      exc_info=(type(error), error, error.__traceback__))
+        await ctx.send(embed=discord.Embed(
+            title="❌ خطأ غير متوقع",
+            description="حدث خطأ ما، حاول لاحقًا. تم تسجيل المشكلة.",
+            color=discord.Color.red(),
+        ))
 
 
 # ---------------------------------------------------------------------------
@@ -1133,5 +1160,17 @@ async def help_cmd(ctx):
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
-threading.Thread(target=_start_web_server, daemon=True).start()
-bot.run(TOKEN)
+def main():
+    if not TOKEN:
+        log.critical("متغير البيئة DISCORD_TOKEN غير موجود. أضِف التوكن في إعدادات البيئة.")
+        raise SystemExit(1)
+    threading.Thread(target=_start_web_server, daemon=True).start()
+    try:
+        bot.run(TOKEN, log_handler=None)
+    except discord.LoginFailure:
+        log.critical("فشل تسجيل الدخول: التوكن غير صالح.")
+        raise SystemExit(1)
+
+
+if __name__ == "__main__":
+    main()

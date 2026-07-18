@@ -6,8 +6,18 @@ import game_data
 import market_data
 
 DB_PATH = os.getenv("DB_PATH", "ohara.db")
-CONN = sqlite3.connect(DB_PATH, check_same_thread=False)
+CONN = sqlite3.connect(DB_PATH, check_same_thread=False, timeout=30)
 CONN.row_factory = sqlite3.Row
+
+# Reliability & concurrency pragmas (professional defaults)
+try:
+    CONN.execute("PRAGMA journal_mode=WAL")
+    CONN.execute("PRAGMA synchronous=NORMAL")
+    CONN.execute("PRAGMA foreign_keys=ON")
+    CONN.execute("PRAGMA busy_timeout=30000")
+    CONN.commit()
+except sqlite3.OperationalError:
+    pass
 
 
 def _add_col(table, col, ctype, default=None):
@@ -387,9 +397,11 @@ def buy_player(pid, team_id, price, buyer_id=""):
 
 def sell_player(pid, price, seller_id=""):
     c = CONN.cursor()
+    row = c.execute("SELECT team_id FROM players WHERE id=?", (pid,)).fetchone()
+    team_id = row["team_id"] if row else None
     c.execute("UPDATE players SET team_id=NULL WHERE id=?", (pid,))
-    c.execute("UPDATE teams SET budget=budget+? WHERE id=(SELECT team_id FROM players WHERE id=?)",
-              (price, pid))
+    if team_id is not None:
+        c.execute("UPDATE teams SET budget=budget+? WHERE id=?", (price, team_id))
     add_history(pid, "بيع", price, seller_id, "")
     CONN.commit()
 
