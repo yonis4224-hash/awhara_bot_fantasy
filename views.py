@@ -890,6 +890,7 @@ class RealLeagueSelect(discord.ui.Select):
 
     async def callback(self, interaction: discord.Interaction):
         lid = int(self.values[0])
+        rl = db.get_real_league(lid)
         owner = str(self.owner_id)
         team = db.get_team_by_owner(owner)
         if self.mode == "create":
@@ -899,12 +900,13 @@ class RealLeagueSelect(discord.ui.Select):
                 return
             view = OwnedView(self.owner_id)
             view.add_item(ClubSelect(self.owner_id, lid, "create"))
-            e = discord.Embed(title=f"🏟️ اختر ناديك في {db.get_league(lid)['name']}", color=discord.Color.green())
+            e = discord.Embed(title=f"🏟️ اختر ناديك في {rl['name']}", color=discord.Color.green())
             e.description = "هذه الأندية متاحة (لم يأخذها أحد):"
             await interaction.response.edit_message(embed=e, view=view)
         elif self.mode == "leaguecreate":
+            rl = db.get_real_league(lid)
             if team and team["real_league_id"] == lid:
-                rl_name = db.get_league(lid)["name"]
+                rl_name = rl["name"]
                 l_id = db.create_league(f"دوري {rl_name}", owner, lid)
                 db.update_team(team["id"], league_id=l_id)
                 e = discord.Embed(title="🏆 تم إنشاء الدوري!", color=discord.Color.gold(),
@@ -917,7 +919,7 @@ class RealLeagueSelect(discord.ui.Select):
                 return
             view = OwnedView(self.owner_id)
             view.add_item(ClubSelect(self.owner_id, lid, "leaguecreate"))
-            e = discord.Embed(title=f"🏆 اختر ناديك في {db.get_league(lid)['name']} لإنشاء الدوري",
+            e = discord.Embed(title=f"🏆 اختر ناديك في {rl['name']} لإنشاء الدوري",
                               color=discord.Color.gold())
             e.description = "سيُنشأ الدوري وستنضم إليه بهذا النادي."
             await interaction.response.edit_message(embed=e, view=view)
@@ -967,26 +969,31 @@ class ClubSelect(discord.ui.Select):
             if db.club_taken(cid):
                 await interaction.response.send_message("❌ هذا النادي مأخوذ بالفعل من لاعب آخر.", ephemeral=True)
                 return
+            if team:
+                await interaction.response.send_message("❌ لديك فريق بالفعل. اكتب `!فريقي`.", ephemeral=True)
+                return
             tid, budget = db.create_team_with_club(cid, owner)
             db.create_coach(owner, str(interaction.user), tid)
             club = db.get_club(cid)
+            rl = db.get_real_league(club['league_id'])
+            n = len(db.team_players(tid))
             e = discord.Embed(title="✅ تم إنشاء الفريق!", color=discord.Color.green(),
-                              description=(f"**{club['name']}** ({db.get_league(club['league_id'])['name']})\n"
-                                           f"👥 24 لاعباً في تشكيلتك\n💰 الميزانية: {budget}م (تعويض للأندية الضعيفة)"))
+                              description=(f"**{club['name']}** ({rl['name']})\n"
+                                           f"👥 {n} لاعباً في تشكيلتك\n💰 الميزانية: {budget}م (تعويض للأندية الأضعف)"))
             e.set_footer(text="اكتب !فريقي لفتح لوحة التحكم")
             await interaction.response.edit_message(embed=e, view=None)
         elif self.mode == "leaguecreate":
             if db.club_taken(cid):
                 await interaction.response.send_message("❌ هذا النادي مأخوذ بالفعل.", ephemeral=True)
                 return
-            if not team:
+            if not team or team["club_id"] == 0:
                 db.create_team_with_club(cid, owner)
                 db.create_coach(owner, str(interaction.user), db.get_team_by_owner(owner)["id"])
             elif team["club_id"] != cid:
                 await interaction.response.send_message(
                     "❌ لديك فريق باسم آخر. استقل بـ !فريقي ← استقالة ثم أعد المحاولة.", ephemeral=True)
                 return
-            rl_name = db.get_league(self.real_league_id)["name"]
+            rl_name = db.get_real_league(self.real_league_id)["name"]
             lid = db.create_league(f"دوري {rl_name}", owner, self.real_league_id)
             db.update_team(db.get_team_by_owner(owner)["id"], league_id=lid)
             e = discord.Embed(title="🏆 تم إنشاء الدوري!", color=discord.Color.gold(),
@@ -1004,7 +1011,7 @@ class ClubSelect(discord.ui.Select):
             if db.club_taken(cid):
                 await interaction.response.send_message("❌ هذا النادي مأخوذ بالفعل.", ephemeral=True)
                 return
-            if not team:
+            if not team or team["club_id"] == 0:
                 db.create_team_with_club(cid, owner)
                 db.create_coach(owner, str(interaction.user), db.get_team_by_owner(owner)["id"])
             elif team["club_id"] != cid:
@@ -1017,12 +1024,12 @@ class ClubSelect(discord.ui.Select):
 
 
 class CreateTeamView(OwnedView):
-    @discord.ui.button(label="➕ إنشاء فريق", emoji="🏟️", style=discord.ButtonStyle.success)
+    @discord.ui.button(label="🏟️ اختر ناديك", emoji="🏟️", style=discord.ButtonStyle.success)
     async def start(self, interaction: discord.Interaction, button: discord.ui.Button):
         view = OwnedView(self.owner_id)
         view.add_item(RealLeagueSelect(self.owner_id, "create"))
         e = discord.Embed(title="🏟️ اختر الدوري ثم ناديك", color=discord.Color.green())
-        e.description = "ستحصل على تشكيلة النادي الحقيقية (24 لاعباً). الأندية الضعيفة تحصل على ميزانية أكبر."
+        e.description = "ستحصل على تشكيلة النادي الحقيقية. الأندية الأضعف تحصل على ميزانية أكبر."
         await interaction.response.edit_message(embed=e, view=view)
 
 

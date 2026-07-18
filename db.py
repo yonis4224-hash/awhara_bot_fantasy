@@ -209,7 +209,7 @@ def get_club(club_id):
     return None
 
 
-def get_league(league_id):
+def get_real_league(league_id):
     for l in market_data.LEAGUES:
         if l["id"] == league_id:
             return l

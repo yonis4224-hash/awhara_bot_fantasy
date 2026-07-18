@@ -1,4 +1,6 @@
 import random
+import json
+import os
 import game_data
 
 LEAGUES = [
@@ -154,10 +156,8 @@ def generate_player(name, pos, base, club_id, league_id, age=None):
 
     attrs = {}
     for k in game_data.ATTR_KEYS:
-        # القدرات الأساسية تتمركز حول النواة، وترتبط بالمركز
         spread = random.randint(-6, 6)
         val = core + spread
-        # مركزية الخصائص: حراس أقوى دفاعاً، مهاجمون أقوى تسديداً...
         if pos == "GK":
             if k == "def":
                 val = core + random.randint(0, 8)
@@ -173,7 +173,6 @@ def generate_player(name, pos, base, club_id, league_id, age=None):
 
     ovr = compute_ovr(pos, attrs)
     age = age if age else random.randint(18, 34)
-    # العمر يؤثر على السعر: الشباب أغلى
     age_mod = 1.15 if age <= 23 else (1.0 if age <= 29 else 0.85)
     price = int(ovr * game_data.CONFIG["PRICE_PER_RATING"] * age_mod) + random.randint(-20, 30)
     price = max(30, price)
@@ -197,12 +196,55 @@ def generate_player(name, pos, base, club_id, league_id, age=None):
     }
 
 
+# Load FC26 real player data
+FC26_DATA_FILE = os.path.join(os.path.dirname(__file__), "market_data_fc26.py")
+if os.path.exists(FC26_DATA_FILE):
+    from market_data_fc26 import PLAYERS as FC26_PLAYERS
+else:
+    FC26_PLAYERS = []
+
+# Build a set of club_ids that have FC26 data
+FC26_CLUBS = set(p["club_id"] for p in FC26_PLAYERS)
+
 def generate_players_data():
     players = []
     pid = 1
-    # تشكيلة واقعية: 3 حراس، 8 دفاع، 8 وسط، 5 هجوم = 24 لاعب
+    # Add real FC26 players
+    for p in FC26_PLAYERS:
+        p_copy = dict(p)
+        p_copy["id"] = pid
+        if "position_detail" in p_copy:
+            p_copy.pop("position_detail", None)
+        if "play_styles" in p_copy:
+            p_copy.pop("play_styles", None)
+        if "height" in p_copy:
+            p_copy.pop("height", None)
+        if "weight" in p_copy:
+            p_copy.pop("weight", None)
+        if "nation" in p_copy:
+            p_copy.pop("nation", None)
+        if "weak_foot" in p_copy:
+            p_copy.pop("weak_foot", None)
+        if "skill_moves" in p_copy:
+            p_copy.pop("skill_moves", None)
+        if "gkdiving" in p_copy:
+            p_copy.pop("gkdiving", None)
+        if "gkhandling" in p_copy:
+            p_copy.pop("gkhandling", None)
+        if "gkkicking" in p_copy:
+            p_copy.pop("gkkicking", None)
+        if "gkpositioning" in p_copy:
+            p_copy.pop("gkpositioning", None)
+        if "gkreflexes" in p_copy:
+            p_copy.pop("gkreflexes", None)
+        players.append(p_copy)
+        pid += 1
+
+    # Generate data for clubs missing FC26 data
     squad_template = ["GK"] * 3 + ["DEF"] * 8 + ["MID"] * 8 + ["ATT"] * 5
     for club in CLUBS:
+        if club["id"] in FC26_CLUBS:
+            continue
         used = set()
         for pos in squad_template:
             attempts = 0

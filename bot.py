@@ -115,7 +115,7 @@ async def on_guild_join(guild):
         description=(
             "أقوى بوت لإدارة فرق كرة القدم في ديسكورد.\n\n"
             "**البداية السريعة:**\n"
-            "1️⃣ اكتب `!انشاء` لاختيار دوري ونادٍ حقيقي (تشكيلة 24 لاعباً)\n"
+            "1️⃣ اكتب `!انشاء` لإنشاء فريق أساسي (11 لاعباً)\n"
             "2️⃣ اكتب `!فريقي` لفتح لوحة التحكم بالأزرار\n"
             "3️⃣ اكتب `!دوري_جديد انجليزي` لإنشاء دوري، و`!انضمام <رقم>` لزملائك\n\n"
             "اكتب `!مساعدة` لعرض كل الأوامر."
@@ -181,10 +181,10 @@ async def create_team(ctx):
 
     embed = discord.Embed(
         title="🏟️ إنشاء فريقك",
-        description="اختر الدوري الحقيقي ثم النادي، لتحصل على تشكيلته الحقيقية (24 لاعباً). الأندية الضعيفة تحصل على ميزانية أكبر.",
+        description="اختر الدوري الحقيقي ثم النادي لتحصل على تشكيلته الحقيقية. الأندية الأضعف تحصل على ميزانية أكبر.",
         color=discord.Color.green(),
     )
-    await ctx.send(embed=embed, view=views.CreateTeamView(ctx.author.id), ephemeral=True)
+    await ctx.send(embed=embed, view=views.CreateTeamView(ctx.author.id))
 
 
 @bot.command(name="فريقي", description="عرض فريقك")
@@ -194,7 +194,7 @@ async def my_team(ctx):
     if not team:
         embed = discord.Embed(
             title="❌ لا تملك فريقاً!",
-            description="أنشئ فريقاً بـ `!انشاء <اسم الفريق>`",
+            description="أنشئ فريقاً بـ `!انشاء`",
             color=discord.Color.red(),
         )
         await ctx.send(embed=embed)
@@ -225,7 +225,7 @@ async def buy(ctx, pid: int):
     if not team:
         embed = discord.Embed(
             title="❌ أنشئ فريقاً أولاً!",
-            description="استخدم `!انشاء <اسم الفريق>`",
+            description="استخدم `!انشاء`",
             color=discord.Color.red(),
         )
         await ctx.send(embed=embed)
@@ -559,7 +559,12 @@ def parse_real_league(arg):
 @bot.command(name="دوري_جديد", description="إنشاء دوري مرتبط بدوري حقيقي")
 @commands.cooldown(1, 10, commands.BucketType.user)
 async def new_league(ctx, *, arg=None):
-    team = db.get_team_by_owner(str(ctx.author.id))
+    owner = str(ctx.author.id)
+    team = db.get_team_by_owner(owner)
+    if not team:
+        tid = db.create_team(f"فريق {ctx.author.display_name}", owner)
+        db.create_coach(owner, str(ctx.author), tid)
+        team = db.get_team(tid)
     if arg:
         rl = parse_real_league(arg)
         if not rl:
@@ -595,6 +600,11 @@ async def join_l(ctx, lid: int):
     if not league:
         await ctx.send(embed=discord.Embed(title="❌ الدوري غير موجود!", color=discord.Color.red()))
         return
+    owner = str(ctx.author.id)
+    team = db.get_team_by_owner(owner)
+    if not team:
+        tid = db.create_team(f"فريق {ctx.author.display_name}", owner)
+        db.create_coach(owner, str(ctx.author), tid)
     rl = league["real_league_id"]
     view = views.OwnedView(ctx.author.id)
     view.add_item(views.ClubSelect(ctx.author.id, rl, "join", league_id=lid))
@@ -619,7 +629,7 @@ async def list_leagues(ctx):
     embed = discord.Embed(title="🏆 الدوريات", color=discord.Color.gold())
     for l in leagues:
         m = len(json.loads(l["members"]))
-        rl = db.get_league(l["real_league_id"])
+        rl = db.get_real_league(l["real_league_id"])
         rl_name = f" ({rl['name']})" if rl else ""
         embed.add_field(
             name=f"#{l['id']} - {l['name']}{rl_name}",
@@ -1017,7 +1027,7 @@ async def help_cmd(ctx):
         title="📘 أوامر أوهارا المدرب الأفضل",
         description=(
             "نظام كرة قدم افتراضي كامل — أنشئ فريقك، تعاقد مع نجوم، وتقدم في الدوريات!\n\n"
-            "✨ **الطريقة الأسهل:** اكتب `!انشاء <اسم>` ثم `!فريقي` "
+            "✨ **الطريقة الأسهل:** اكتب `!انشاء` ثم `!فريقي` "
             "وستظهر لك **قائمة أزرار** لكل شيء (شراء، تطوير، تشكيل، خطة، بيع، طرد، استقالة...) "
             "بدون الحاجة لكتابة الأوامر!"
         ),
@@ -1027,7 +1037,7 @@ async def help_cmd(ctx):
     embed.add_field(
         name="⚽ إنشاء الفريق",
         value=(
-            "`!انشاء` — 🎮 اختر دوريًا وناديًا حقيقيًا (تشكيلة 24 لاعباً)\n"
+            "`!انشاء` — 🎮 إنشاء فريق أساسي (11 لاعباً، بدون نادٍ)\n"
             "`!فريقي` — 🎮 لوحة التحكم بالأزرار (خاصة بك وحدك، لا يراها غيرك)"
         ),
         inline=False,
