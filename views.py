@@ -30,10 +30,19 @@ def team_embed(team, players):
 
     if players:
         lines = []
+        total = 0
+        shown = 0
         for p in players:
             emo = POS_EMOJI.get(p["position"], "")
-            lines.append(f"{emo} `{p['id']}` **{p['name']}** — OVR {p['ovr']} | 🔋{p['condition']}%")
-        e.add_field(name="اللاعبون", value="\n".join(lines[:25]), inline=False)
+            line = f"{emo} `{p['id']}` **{p['name']}** — OVR {p['ovr']} | 🔋{p['condition']}%"
+            if total + len(line) + 1 > 950:
+                break
+            lines.append(line)
+            total += len(line) + 1
+            shown += 1
+        if shown < len(players):
+            lines.append(f"... و{len(players) - shown} لاعب آخر (استخدم القوائم لعرضهم)")
+        e.add_field(name="اللاعبون", value="\n".join(lines), inline=False)
     else:
         e.add_field(name="اللاعبون", value="لا يوجد لاعبين. اضغط 🛒 شراء.", inline=False)
 
@@ -412,7 +421,7 @@ class MarketLeagueSelect(discord.ui.Select):
 
     async def callback(self, interaction: discord.Interaction):
         lid = int(self.values[0])
-        league = db.get_league(lid)
+        league = db.get_real_league(lid)
         clubs = db.get_clubs_by_league(lid)
         options = [
             discord.SelectOption(label=c["name"], value=str(c["id"]))
@@ -509,7 +518,7 @@ class MarketPlayerSelect(discord.ui.Select):
             opts = [discord.SelectOption(label=c["name"], value=str(c["id"])) for c in clubs]
             view = OwnedView(self.owner_id)
             view.add_item(MarketClubSelect(self.owner_id, self.league_id, opts))
-            league = db.get_league(self.league_id)
+            league = db.get_real_league(self.league_id)
             embed = discord.Embed(title=f"{league['flag']} {league['name']}", color=discord.Color.blue())
             embed.description = "اختر النادي:"
             await interaction.response.edit_message(embed=embed, view=view)
@@ -584,7 +593,7 @@ class BackToMarketButton(discord.ui.Button):
         opts = [discord.SelectOption(label=c["name"], value=str(c["id"])) for c in clubs]
         view = OwnedView(self.owner_id)
         view.add_item(MarketClubSelect(self.owner_id, self.league_id, opts))
-        league = db.get_league(self.league_id)
+        league = db.get_real_league(self.league_id)
         embed = discord.Embed(title=f"{league['flag']} {league['name']}", color=discord.Color.blue())
         embed.description = "اختر النادي:"
         await interaction.response.edit_message(embed=embed, view=view)
