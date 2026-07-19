@@ -54,10 +54,10 @@ intents = discord.Intents.default()
 intents.message_content = True
 
 bot = commands.Bot(
-    command_prefix="!",
+    command_prefix=".",
     intents=intents,
     help_command=None,  # we use our own help
-    activity=discord.Game(name="!مساعدة"),
+    activity=discord.Game(name=".مساعدة"),
 )
 
 TOKEN = os.getenv("DISCORD_TOKEN")
@@ -129,10 +129,10 @@ async def on_guild_join(guild):
         description=(
             "أقوى بوت لإدارة فرق كرة القدم في ديسكورد.\n\n"
             "**البداية السريعة:**\n"
-            "1️⃣ اكتب `!انشاء` لإنشاء فريق أساسي (11 لاعباً)\n"
-            "2️⃣ اكتب `!فريقي` لفتح لوحة التحكم بالأزرار\n"
-            "3️⃣ اكتب `!دوري_جديد انجليزي` لإنشاء دوري، و`!انضمام <رقم>` لزملائك\n\n"
-            "اكتب `!مساعدة` لعرض كل الأوامر."
+            "1️⃣ اكتب `.انشاء` لإنشاء فريق أساسي (11 لاعباً)\n"
+            "2️⃣ اكتب `.فريقي` لفتح لوحة التحكم بالأزرار\n"
+            "3️⃣ اكتب `.دوري_جديد انجليزي` لإنشاء دوري، و`.انضمام <رقم>` لزملائك\n\n"
+            "اكتب `.مساعدة` لعرض كل الأوامر."
         ),
         color=discord.Color.green(),
     )
@@ -161,7 +161,7 @@ async def on_command_error(ctx, error):
     elif isinstance(error, commands.MissingRequiredArgument):
         embed = discord.Embed(
             title="❌ ناقص معلومة!",
-            description=f"استخدام الأمر: `!{ctx.command.name} {ctx.command.signature}`",
+            description=f"استخدام الأمر: `.{ctx.command.name} {ctx.command.signature}`",
             color=discord.Color.red(),
         )
         await ctx.send(embed=embed)
@@ -200,7 +200,7 @@ async def create_team(ctx):
     if db.get_coach(str(ctx.author.id)):
         embed = discord.Embed(
             title="❌ لديك فريق بالفعل!",
-            description="استخدم `!فريقي` لعرض فريقك.",
+            description="استخدم `.فريقي` لعرض فريقك.",
             color=discord.Color.red(),
         )
         await ctx.send(embed=embed)
@@ -221,7 +221,7 @@ async def my_team(ctx):
     if not team:
         embed = discord.Embed(
             title="❌ لا تملك فريقاً!",
-            description="أنشئ فريقاً بـ `!انشاء`",
+            description="أنشئ فريقاً بـ `.انشاء`",
             color=discord.Color.red(),
         )
         await ctx.send(embed=embed)
@@ -252,7 +252,7 @@ async def buy(ctx, pid: int):
     if not team:
         embed = discord.Embed(
             title="❌ أنشئ فريقاً أولاً!",
-            description="استخدم `!انشاء`",
+            description="استخدم `.انشاء`",
             color=discord.Color.red(),
         )
         await ctx.send(embed=embed)
@@ -402,7 +402,7 @@ async def dev_view(ctx, pid: int):
         )
 
     embed.description = "\n".join(lines)
-    embed.set_footer(text="للتطوير: !طور <رقم> <المستوى>")
+    embed.set_footer(text="للتطوير: .طور <رقم> <المستوى>")
     await ctx.send(embed=embed)
 
 
@@ -479,7 +479,7 @@ async def train(ctx, amount: int):
         description=f"خصصت **{amount}** نقطة خبرة للتدريب قبل المباراة القادمة.",
         color=discord.Color.green(),
     )
-    embed.set_footer(text="⚠️ التدريب يظهر للخصم في !مباراتي")
+    embed.set_footer(text="⚠️ التدريب يظهر للخصم في .مباراتي")
     await ctx.send(embed=embed)
 
 
@@ -603,7 +603,7 @@ async def new_league(ctx, *, arg=None):
             lid = db.create_league(f"دوري {rl['name']}", str(ctx.author.id), rl["id"])
             db.update_team(team["id"], league_id=lid)
             await ctx.send(embed=discord.Embed(title="🏆 تم إنشاء الدوري!",
-                                               description=f"**دوري {rl['name']}** (رقم {lid})\nانضم زملاؤك بـ `!انضمام {lid}` واختاروا أنديتهم.",
+                                               description=f"**دوري {rl['name']}** (رقم {lid})\nانضم زملاؤك بـ `.انضمام {lid}` واختاروا أنديتهم.",
                                                color=discord.Color.gold()))
             return
         view = views.OwnedView(ctx.author.id)
@@ -647,7 +647,7 @@ async def list_leagues(ctx):
     if not leagues:
         embed = discord.Embed(
             title="🏆 لا توجد دوريات!",
-            description="أنشئ دوري بـ `!دوري_جديد <اسم>`",
+            description="أنشئ دوري بـ `.دوري_جديد <اسم>`",
             color=discord.Color.orange(),
         )
         await ctx.send(embed=embed)
@@ -705,8 +705,8 @@ async def challenge_cmd(ctx, opponent: discord.Member):
     embed.add_field(
         name="الخطوات",
         value=(
-            f"1. كلاهما يضبط خطته بـ `!خطة` و `!تشكيل`\n"
-            f"2. كلاهما يكتب `!جاهز {pid}`\n"
+            f"1. كلاهما يضبط خطته بـ `.خطة` و `.تشكيل`\n"
+            f"2. كلاهما يكتب `.جاهز {pid}`\n"
             f"3. المباراة تبدأ تلقائياً!"
         ),
         inline=False,
@@ -744,7 +744,7 @@ async def my_matches(ctx):
             value=f"تدريب الخصم: {opp_train} نقطة\nحالة جاهزيتك: {status}",
             inline=False,
         )
-    embed.set_footer(text="اكتب !جاهز <رقم> للتأكيد")
+    embed.set_footer(text="اكتب .جاهز <رقم> للتأكيد")
     await ctx.send(embed=embed)
 
 
@@ -935,7 +935,7 @@ async def season_start_cmd(ctx):
     if not team["league_id"]:
         embed = discord.Embed(
             title="❌ فريقك ليس في دوري!",
-            description="انضم لدوري عبر `!دوريات` أولاً.",
+            description="انضم لدوري عبر `.دوريات` أولاً.",
             color=discord.Color.red(),
         )
         await ctx.send(embed=embed)
@@ -951,7 +951,7 @@ async def season_start_cmd(ctx):
         return
     embed = discord.Embed(
         title="🏆 انطلق الموسم!",
-        description=f"تم جدولة **{rounds}** جولات. قدّم الجولات بـ `!تقدم` وشاهد الترتيب بـ `!ترتيب`.",
+        description=f"تم جدولة **{rounds}** جولات. قدّم الجولات بـ `.تقدم` وشاهد الترتيب بـ `.ترتيب`.",
         color=discord.Color.gold(),
     )
     await ctx.send(embed=embed)
@@ -968,7 +968,7 @@ async def standings_cmd(ctx):
     season = db.get_season(team["league_id"])
     if not season:
         embed = discord.Embed(title="❌ لا يوجد موسم!", color=discord.Color.red())
-        embed.description = "ابدأ موسم بـ `!موسم`"
+        embed.description = "ابدأ موسم بـ `.موسم`"
         await ctx.send(embed=embed)
         return
     status_ar = "⚔️ جاري" if season["status"] == "active" else "🏁 منتهٍ"
@@ -1044,10 +1044,10 @@ async def tips(ctx):
     )
     tips_list = [
         "🎯 طابق خطتك لهوية فريقك: فريق هجومي → خطة هجومية، وإلا تُعاقب.",
-        "👀 راجع تدريب الخصم في `!مباراتي` قبل `!جاهز`.",
+        "👀 راجع تدريب الخصم في `.مباراتي` قبل `.جاهز`.",
         "⚔️ الهجوم يكسر الدفاعي، الدفاع يكسر المتوازن، المتوازن يكسر الهجومي.",
         "🌟 فريق متوسط بخطط صحيحة وتدريب مكثف قد يفوز على فريق نجوم!",
-        "🔧 طور لاعبيك بـ `!طور` لرفع الريت والسعر.",
+        "🔧 طور لاعبيك بـ `.طور` لرفع الريت والسعر.",
     ]
     embed.description = "\n".join(tips_list)
     await ctx.send(embed=embed)
@@ -1060,7 +1060,7 @@ async def help_cmd(ctx):
         title="📘 أوامر أوهارا المدرب الأفضل",
         description=(
             "نظام كرة قدم افتراضي كامل — أنشئ فريقك، تعاقد مع نجوم، وتقدم في الدوريات!\n\n"
-            "✨ **الطريقة الأسهل:** اكتب `!انشاء` ثم `!فريقي` "
+            "✨ **الطريقة الأسهل:** اكتب `.انشاء` ثم `.فريقي` "
             "وستظهر لك **قائمة أزرار** لكل شيء (شراء، تطوير، تشكيل، خطة، بيع، طرد، استقالة...) "
             "بدون الحاجة لكتابة الأوامر!"
         ),
@@ -1070,8 +1070,8 @@ async def help_cmd(ctx):
     embed.add_field(
         name="⚽ إنشاء الفريق",
         value=(
-            "`!انشاء` — 🎮 إنشاء فريق أساسي (11 لاعباً، بدون نادٍ)\n"
-            "`!فريقي` — 🎮 لوحة التحكم بالأزرار (خاصة بك وحدك، لا يراها غيرك)"
+            "`.انشاء` — 🎮 إنشاء فريق أساسي (11 لاعباً، بدون نادٍ)\n"
+            "`.فريقي` — 🎮 لوحة التحكم بالأزرار (خاصة بك وحدك، لا يراها غيرك)"
         ),
         inline=False,
     )
@@ -1079,10 +1079,10 @@ async def help_cmd(ctx):
     embed.add_field(
         name="🛒 سوق الانتقالات",
         value=(
-            "`!سوق` — 🎮 سوق بالقوائم: اختر الدوري ← النادي ← اللاعب\n"
-            "`!لاعب <رقم>` — تفاصيل لاعب\n"
-            "`!سجل <رقم>` — سجل تاريخ اللاعب\n"
-            "`!بيع <رقم>` — بيع لاعب"
+            "`.سوق` — 🎮 سوق بالقوائم: اختر الدوري ← النادي ← اللاعب\n"
+            "`.لاعب <رقم>` — تفاصيل لاعب\n"
+            "`.سجل <رقم>` — سجل تاريخ اللاعب\n"
+            "`.بيع <رقم>` — بيع لاعب"
         ),
         inline=False,
     )
@@ -1090,9 +1090,9 @@ async def help_cmd(ctx):
     embed.add_field(
         name="🔧 تطوير اللاعبين",
         value=(
-            "`!لاعب_تطوير <رقم>` — مستويات التطوير\n"
-            "`!طور <رقم> <مستوى>` — تطوير لاعب (1-4)\n"
-            "`!تدريب <نقاط>` — تدريب قبل المباراة"
+            "`.لاعب_تطوير <رقم>` — مستويات التطوير\n"
+            "`.طور <رقم> <مستوى>` — تطوير لاعب (1-4)\n"
+            "`.تدريب <نقاط>` — تدريب قبل المباراة"
         ),
         inline=False,
     )
@@ -1100,10 +1100,10 @@ async def help_cmd(ctx):
     embed.add_field(
         name="🎯 التكتيكات",
         value=(
-            "`!تشكيل <4-3-3>` — ضبط التشكيل\n"
-            "`!خطة <هجومي/متوازن/دفاعي>` — ضبط الخطة العامة\n"
-            "`!تكتيك` — 🎮 التكتيك الكامل (تمرير/ضغط/رقابة/إيقاع/مرتد/تسلل)\n"
-            "`!خطتي` — عرض خطتك السرية"
+            "`.تشكيل <4-3-3>` — ضبط التشكيل\n"
+            "`.خطة <هجومي/متوازن/دفاعي>` — ضبط الخطة العامة\n"
+            "`.تكتيك` — 🎮 التكتيك الكامل (تمرير/ضغط/رقابة/إيقاع/مرتد/تسلل)\n"
+            "`.خطتي` — عرض خطتك السرية"
         ),
         inline=False,
     )
@@ -1111,9 +1111,9 @@ async def help_cmd(ctx):
     embed.add_field(
         name="🏗️ المنشآت والكشافة",
         value=(
-            "`!منشأة` — 🎮 الملعب/التدريب/الطبي/الشباب\n"
-            "`!كشاف` — استقدام لاعب حر (10 رموز)\n"
-            "`!راحة` — استعادة جاهزية اللاعبين"
+            "`.منشأة` — 🎮 الملعب/التدريب/الطبي/الشباب\n"
+            "`.كشاف` — استقدام لاعب حر (10 رموز)\n"
+            "`.راحة` — استعادة جاهزية اللاعبين"
         ),
         inline=False,
     )
@@ -1121,12 +1121,12 @@ async def help_cmd(ctx):
     embed.add_field(
         name="🏆 الدوريات والمواسم",
         value=(
-            "`!دوري_جديد <دوري>` — إنشاء دوري حقيقي (مثال: انجليزي/ايطالي/الماني)\n"
-            "`!انضمام <رقم>` — الانضمام لدوري واختيار نادٍ\n"
-            "`!دوريات` — قائمة الدوريات\n"
-            "`!موسم` — بدء موسم لدوريك\n"
-            "`!تقدم` — تقديم جولة\n"
-            "`!ترتيب` — ترتيب الدوري"
+            "`.دوري_جديد <دوري>` — إنشاء دوري حقيقي (مثال: انجليزي/ايطالي/الماني)\n"
+            "`.انضمام <رقم>` — الانضمام لدوري واختيار نادٍ\n"
+            "`.دوريات` — قائمة الدوريات\n"
+            "`.موسم` — بدء موسم لدوريك\n"
+            "`.تقدم` — تقديم جولة\n"
+            "`.ترتيب` — ترتيب الدوري"
         ),
         inline=False,
     )
@@ -1134,8 +1134,8 @@ async def help_cmd(ctx):
     embed.add_field(
         name="👤 المدرب",
         value=(
-            "`!مستواي` — ملف المدرب (مستوى/سمعة/رموز/ألقاب)\n"
-            "`!لاعب <رقم>` — بطاقة اللاعب (الخصائص الست)"
+            "`.مستواي` — ملف المدرب (مستوى/سمعة/رموز/ألقاب)\n"
+            "`.لاعب <رقم>` — بطاقة اللاعب (الخصائص الست)"
         ),
         inline=False,
     )
@@ -1143,9 +1143,9 @@ async def help_cmd(ctx):
     embed.add_field(
         name="⚔️ المباريات",
         value=(
-            "`!تحدي @خصم` — تحدي لاعب\n"
-            "`!مباراتي` — مبارياتك المعلقة\n"
-            "`!جاهز <رقم>` — تأكيد الجاهزية"
+            "`.تحدي @خصم` — تحدي لاعب\n"
+            "`.مباراتي` — مبارياتك المعلقة\n"
+            "`.جاهز <رقم>` — تأكيد الجاهزية"
         ),
         inline=False,
     )
@@ -1153,8 +1153,8 @@ async def help_cmd(ctx):
     embed.add_field(
         name="💡 أخرى",
         value=(
-            "`!نصائح` — نصائح للعب\n"
-            "`!مساعدة` — عرض هذه القائمة"
+            "`.نصائح` — نصائح للعب\n"
+            "`.مساعدة` — عرض هذه القائمة"
         ),
         inline=False,
     )
