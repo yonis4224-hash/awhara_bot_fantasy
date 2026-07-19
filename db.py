@@ -671,17 +671,25 @@ def create_season(league_id):
     ids = [t["id"] for t in teams]
     random.shuffle(ids)
     n = len(ids)
-    # جدولة round-robin (مباريات ذهاب فقط لتقصير الموسم)
+    # For odd number of teams, add a phantom (0 = bye) to make it even
+    if n % 2 == 1:
+        ids.append(0)
+        n += 1
+    # جدولة round-robin — طريقة الدائرة (circle method)
     rounds = []
     for r in range(n - 1):
         pairs = []
         for i in range(n // 2):
             a = ids[i]
             b = ids[n - 1 - i]
-            pairs.append((a, b))
-        ids.insert(1, ids.pop())
-        rounds.append(pairs)
-    standings = {str(tid): {"P": 0, "W": 0, "D": 0, "L": 0, "GF": 0, "GA": 0, "Pts": 0} for tid in ids}
+            if a and b:  # تخطي المباريات الوهمية (bye)
+                pairs.append((a, b))
+        # تثبيت العنصر الأول وتدوير الباقي
+        ids = [ids[0]] + [ids[-1]] + ids[1:-1]
+        if pairs:
+            rounds.append(pairs)
+    real_ids = [tid for tid in ids if tid]  # استبعاد 0 الوهمي
+    standings = {str(tid): {"P": 0, "W": 0, "D": 0, "L": 0, "GF": 0, "GA": 0, "Pts": 0} for tid in real_ids}
     c = CONN.cursor()
     c.execute("DELETE FROM seasons WHERE league_id=?", (league_id,))
     c.execute("INSERT INTO seasons (league_id, round, total_rounds, fixtures, standings, status) VALUES (?,?,?,?,?,?)",
