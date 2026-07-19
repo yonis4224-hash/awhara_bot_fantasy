@@ -3,7 +3,7 @@
 # ===========================================================================
 
 CONFIG = {
-    "START_BUDGET": 300,
+    "START_BUDGET": 600,
     "START_XP": 900,
     "START_TOKENS": 50,
     "WIN_XP": 320, "WIN_MONEY": 45, "WIN_TOKENS": 5,
