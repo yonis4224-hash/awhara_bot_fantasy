@@ -966,17 +966,23 @@ async def standings_cmd(ctx):
         await ctx.send(embed=embed)
         return
     season = db.get_season(team["league_id"])
-    if not season or season["status"] != "active":
-        embed = discord.Embed(title="❌ لا يوجد موسم نشط!", color=discord.Color.red())
+    if not season:
+        embed = discord.Embed(title="❌ لا يوجد موسم!", color=discord.Color.red())
+        embed.description = "ابدأ موسم بـ `!موسم`"
         await ctx.send(embed=embed)
         return
+    status_ar = "⚔️ جاري" if season["status"] == "active" else "🏁 منتهٍ"
     standings = json.loads(season["standings"])
     teams = {t["id"]: t for t in db.get_league_teams(team["league_id"])}
+    if not standings:
+        embed = discord.Embed(title="❌ لا يوجد ترتيب بعد!", color=discord.Color.red())
+        await ctx.send(embed=embed)
+        return
     rows = []
     for tid, s in sorted(standings.items(), key=lambda kv: (kv[1]["Pts"], kv[1]["GF"] - kv[1]["GA"]), reverse=True):
         name = teams.get(int(tid), {}).get("name", f"فريق {tid}")
         rows.append(f"`{len(rows)+1}.` **{name}** — {s['Pts']}ن | {s['W']}ف/{s['D']}ت/{s['L']}خ | {s['GF']}-{s['GA']}")
-    e = discord.Embed(title=f"🏆 ترتيب الدوري (جولة {season['round']}/{season['total_rounds']})", color=discord.Color.gold())
+    e = discord.Embed(title=f"🏆 ترتيب الدوري {status_ar} (جولة {season['round']}/{season['total_rounds']})", color=discord.Color.gold())
     e.description = "\n".join(rows) if rows else "لا يوجد"
     await ctx.send(embed=e)
 
