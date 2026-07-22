@@ -19,6 +19,11 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(na
 log = logging.getLogger("ohara_templates")
 
 # ------------------------------------------------------------------------------
+# الروم المصرح به (البوت يشتغل في روم واحد فقط)
+# ------------------------------------------------------------------------------
+ALLOWED_CHANNEL_ID = 1528566822935330989
+
+# ------------------------------------------------------------------------------
 # قاموس الديباجات
 # ------------------------------------------------------------------------------
 TEMPLATES = {
@@ -258,9 +263,13 @@ async def on_ready():
     log.info("البوت جاهز: %s (id=%s)", bot.user, bot.user.id)
     await bot.change_presence(activity=discord.Game(name=".اوامر أو الأرقام 1-15"))
 
+@bot.check
+async def channel_check(ctx):
+    return ctx.channel.id == ALLOWED_CHANNEL_ID
+
 @bot.event
 async def on_message(message):
-    if message.author.bot:
+    if message.author.bot or message.channel.id != ALLOWED_CHANNEL_ID:
         return
     content = message.content.strip()
     if content in TEMPLATES:
