@@ -163,10 +163,7 @@ class CatSelect(Select):
         val = self.values[0]
         text = cat["templates"][val]
         title = cat["titles"][val]
-        await interaction.response.send_message(
-            f"**{title}**\n\nقم بنسخ النص التالي واستخدامه:\n```\n{text}\n```",
-            ephemeral=True
-        )
+        await interaction.response.send_message(text, ephemeral=True)
 
 class CatView(View):
     def __init__(self, cat):
@@ -204,7 +201,7 @@ async def on_message(message):
             description=f"ديباجة {cat['name']}",
             color=discord.Color.gold()
         )
-        embed.add_field(name="📋 النص:", value=f"```\n{template_text}\n```", inline=False)
+        embed.add_field(name="📋 النص:", value=f"{template_text}", inline=False)
         embed.set_footer(text=f"تم الطلب بواسطة {message.author.display_name}", icon_url=message.author.display_avatar.url)
         await message.channel.send(embed=embed)
         await bot.process_commands(message)
@@ -232,7 +229,7 @@ def make_template_cmd(num):
         cat = get_cat(ctx.channel.id)
         if not cat:
             return await ctx.send("❌ هذا الروم غير مخصص للديباجات.")
-        await ctx.send(f"**{cat['titles'][key]}**\n```\n{cat['templates'][key]}\n```")
+        await ctx.send(cat['templates'][key])
     return cmd
 
 for _num in range(1, 16):
