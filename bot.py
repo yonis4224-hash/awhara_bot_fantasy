@@ -11,7 +11,7 @@ from discord.ui import View, Select
 intents = discord.Intents.default()
 intents.message_content = True
 
-bot = commands.Bot(command_prefix=['.', '!', '؟'], intents=intents, help_command=None)
+bot = commands.Bot(command_prefix=['.', '!', '؟', '-'], intents=intents, help_command=None)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 log = logging.getLogger("ohara_templates")
@@ -253,7 +253,7 @@ class CatView(View):
 @bot.event
 async def on_ready():
     log.info("البوت جاهز: %s (id=%s)", bot.user, bot.user.id)
-    await bot.change_presence(activity=discord.Game(name=".اوامر في شات التصنيف"))
+    await bot.change_presence(activity=discord.Game(name="-اوامر في شات التصنيف"))
 
 ALLOWED_CHANNELS = {CHANNEL_MOVIES, CHANNEL_FOOTBALL, CHANNEL_ANIME, CHANNEL_GIRLS, CHANNEL_GAMES, GAME_CHANNEL}
 
