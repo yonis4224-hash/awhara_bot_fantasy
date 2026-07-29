@@ -377,7 +377,7 @@ def get_player(uid):
     data = load_data()
     uid = str(uid)
     if uid not in data["users"]:
-        data["users"][uid] = {"points": 0, "shield": 0, "double_kick": 0, "anti_kick": 0}
+        data["users"][uid] = {"points": 0, "shield": 0, "double_kick": 0, "anti_kick": 0, "wins": 0, "games": 0, "eliminations": 0}
         save_data(data)
     return data["users"][uid]
 
@@ -426,6 +426,45 @@ async def points_cmd(ctx):
     player = get_player(ctx.author.id)
     items_list = f"🛡 درع: {player['shield']} | 💥 طرد ثنائي: {player['double_kick']} | 🔄 طرد مضاد: {player['anti_kick']}"
     await ctx.send(f"⭐ {ctx.author.mention} نقاطك: **{player['points']}**\n{items_list}")
+
+@bot.command(name="تصنيف", aliases=["leaderboard", "top", "المتصدرين"])
+async def leaderboard_cmd(ctx):
+    if ctx.channel.id != GAME_CHANNEL:
+        return
+    data = load_data()
+    users = []
+    for uid, p in data["users"].items():
+        users.append((uid, p["wins"], p["points"], p["eliminations"], p["games"]))
+    users.sort(key=lambda x: (-x[1], -x[2]))
+    e = discord.Embed(title="🏆 Leaderboard", color=C_GOLD)
+    e.description = "```\n" + "─" * 22 + "```"
+    for i, (uid, wins, pts, elims, games) in enumerate(users[:10]):
+        medal = ["🥇", "🥈", "🥉"][i] if i < 3 else f"`{i+1:02d}`"
+        e.add_field(
+            name=f"{medal} <@{uid}>",
+            value=f"Wins: **{wins}** | Points: **{pts}** | Elims: **{elims}** | Games: **{games}**",
+            inline=False
+        )
+    if not users:
+        e.add_field(name="No data", value="Play some games first!", inline=False)
+    await ctx.send(embed=e)
+
+@bot.command(name="احصائيات", aliases=["stats", "ستات"])
+async def stats_cmd(ctx):
+    if ctx.channel.id != GAME_CHANNEL:
+        return
+    p = get_player(ctx.author.id)
+    ratio = f"{p['wins']/p['games']:.0%}" if p["games"] > 0 else "N/A"
+    e = discord.Embed(title="📊 Player Stats", color=C_TEAL)
+    e.description = f"```\n{'─' * 18}\n STATISTICS\n{'─' * 18}```"
+    e.add_field(name="Player", value=ctx.author.mention, inline=False)
+    e.add_field(name="Wins", value=str(p["wins"]), inline=True)
+    e.add_field(name="Games", value=str(p["games"]), inline=True)
+    e.add_field(name="Win Rate", value=ratio, inline=True)
+    e.add_field(name="Eliminations", value=str(p["eliminations"]), inline=True)
+    e.add_field(name="Points", value=str(p["points"]), inline=True)
+    e.add_field(name="Items", value=f"🛡 {p['shield']} | 💥 {p['double_kick']} | 🔄 {p['anti_kick']}", inline=False)
+    await ctx.send(embed=e)
 
 # ------------------------------------------------------------------------------
 # روليت — تصميم احترافي
@@ -547,7 +586,7 @@ async def roulette_cmd(ctx):
     if gid in active_roulettes:
         return await ctx.send("❌ Game in progress.")
 
-    active_roulettes[gid] = {"players": [ctx.author.id], "alive": [ctx.author.id], "phase": "joining", "creator": ctx.author.id, "countdown": 20}
+    active_roulettes[gid] = {"players": [ctx.author.id], "alive": [ctx.author.id], "phase": "joining", "creator": ctx.author.id, "countdown": 20, "log": [], "kill_count": {}}
     view = JoinView(gid)
     msg = await ctx.send(embed=jembed(gid, 20), view=view)
     active_roulettes[gid]["message"] = msg
@@ -624,6 +663,15 @@ async def run_game(ctx, gid, sm):
                 elim = sel
                 reason = f"⏱ <@{sel}> didn't choose"
 
+        # ---- Kill tracking ----
+        log_entry = f"Round {rn}: {reason}"
+        eliminator = elim  # who caused the elimination (for kill credit)
+        # For timeout cases, elim is sel and no one gets credit
+        if "didn't choose" in reason:
+            eliminator = None
+        elif "eliminated" in reason or "chose" in reason:
+            eliminator = sel
+
         td = get_player(elim)
         desc = reason
 
@@ -633,18 +681,36 @@ async def run_game(ctx, gid, sm):
             ots = [p for p in alive if p != elim]
             if ots:
                 ot = random.choice(ots)
-                desc += f"\n🛡 {elim} used Shield → {ot} eliminated"
+                desc += f"\n🛡 <@{elim}> Shield → <@{ot}> eliminated"
                 alive.remove(ot)
+                game["log"].append(f"{log_entry} → Shield redirected to <@{ot}>")
+                # eliminator still gets kill credit for the redirect
+                if eliminator:
+                    game["kill_count"][eliminator] = game["kill_count"].get(eliminator, 0) + 1
+                    kp = get_player(eliminator)
+                    kp["points"] += 5
+                    kp["eliminations"] += 1
+                    save_player(eliminator, kp)
             else:
-                desc += f"\n🛡 {elim} used Shield — survived!"
+                desc += f"\n🛡 <@{elim}> Shield — survived!"
+                game["log"].append(f"{log_entry} → Shield blocked")
+                if eliminator:
+                    game["kill_count"][eliminator] = game["kill_count"].get(eliminator, 0) + 1
         elif td["anti_kick"] > 0:
             td["anti_kick"] -= 1
             save_player(elim, td)
             ots = [p for p in alive if p != elim]
             if ots:
                 ot = random.choice(ots)
-                desc += f"\n🔄 {elim} used Anti-Kick → {ot} eliminated"
+                desc += f"\n🔄 <@{elim}> Anti-Kick → <@{ot}> eliminated"
                 alive.remove(ot)
+                game["log"].append(f"{log_entry} → Anti-Kick reflected to <@{ot}>")
+                if eliminator:
+                    game["kill_count"][eliminator] = game["kill_count"].get(eliminator, 0) + 1
+                    kp = get_player(eliminator)
+                    kp["points"] += 5
+                    kp["eliminations"] += 1
+                    save_player(eliminator, kp)
         else:
             if elim in alive:
                 if td["double_kick"] > 0 and len(alive) > 2:
@@ -654,9 +720,22 @@ async def run_game(ctx, gid, sm):
                     if ots:
                         sc = random.choice(ots)
                         alive.remove(sc)
-                        desc += f"\n💥 {elim} used Double-Kick → {sc} taken down too"
+                        desc += f"\n💥 <@{elim}> Double-Kick → <@{sc}> also eliminated"
+                        game["log"].append(f"{log_entry} → <@{elim}> took <@{sc}> down too")
+                        # The eliminated person gets kill credit for the extra
+                        ekp = get_player(elim)
+                        ekp["points"] += 5
+                        ekp["eliminations"] += 1
+                        save_player(elim, ekp)
                 alive.remove(elim)
-                desc += f"\n❌ {elim} eliminated"
+                desc += f"\n❌ <@{elim}> eliminated"
+                game["log"].append(f"{log_entry} → <@{elim}> eliminated")
+                if eliminator:
+                    game["kill_count"][eliminator] = game["kill_count"].get(eliminator, 0) + 1
+                    kp = get_player(eliminator)
+                    kp["points"] += 5
+                    kp["eliminations"] += 1
+                    save_player(eliminator, kp)
 
         if gid in active_roulettes:
             active_roulettes[gid]["alive"] = [p for p in alive]
@@ -670,16 +749,35 @@ async def run_game(ctx, gid, sm):
     if gid not in active_roulettes:
         return
 
+    # ---- Match Summary ----
     winner = alive[0]
     pts = random.choice([10, 12, 15, 18, 20, 25])
     pd = get_player(winner)
     pd["points"] += pts
+    pd["wins"] += 1
     save_player(winner, pd)
 
-    we = discord.Embed(title="🏆 Winner", color=C_GOLD)
-    we.description = f"```\n{'─' * 18}\n WINNER\n{'─' * 18}```"
-    we.add_field(name="Champion", value=f"<@{winner}>", inline=False)
-    we.add_field(name="Reward", value=f"+{pts} pts", inline=False)
+    # Update games played for all participants
+    all_uids = set(game["players"])
+    for uid in all_uids:
+        p = get_player(uid)
+        p["games"] += 1
+        save_player(uid, p)
+
+    # Build match summary
+    log_text = "\n".join(game["log"]) if game["log"] else "No eliminations"
+    kills_text = "\n".join(
+        f"<@{uid}>: {cnt}" for uid, cnt in sorted(game["kill_count"].items(), key=lambda x: -x[1])
+    ) or "None"
+
+    we = discord.Embed(title="🏆 Match Summary", color=C_GOLD)
+    we.description = f"```\n{'─' * 18}\n CHAMPION\n{'─' * 18}```"
+    we.add_field(name="Winner", value=f"<@{winner}>", inline=True)
+    we.add_field(name="Reward", value=f"+{pts} pts", inline=True)
+    we.add_field(name="Players", value=f"{len(all_uids)}", inline=True)
+    we.add_field(name="Eliminations", value=kills_text, inline=False)
+    we.add_field(name="Match Log", value=log_text[:1024], inline=False)
+    we.set_footer(text=f"{len(game['log'])} total eliminations")
     await ctx.send(embed=we)
     del active_roulettes[gid]
 
