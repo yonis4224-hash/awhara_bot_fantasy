@@ -416,7 +416,7 @@ async def buy_cmd(ctx, item_num: str = None):
     player["points"] -= item["price"]
     player[item["key"]] += 1
     save_player(ctx.author.id, player)
-    await ctx.send(f"✅ اشتريت **{item['name']}**! عندك الآن {item['key']}")
+    await ctx.send(f"✅ اشتريت **{item['name']}**! رصيدك: {player['points']} نقطة")
 
 @bot.command(name="نقاطي", aliases=["points", "نقاط"])
 async def points_cmd(ctx):
@@ -426,91 +426,149 @@ async def points_cmd(ctx):
     items_list = f"🛡 درع: {player['shield']} | 💥 طرد ثنائي: {player['double_kick']} | 🔄 طرد مضاد: {player['anti_kick']}"
     await ctx.send(f"⭐ {ctx.author.mention} نقاطك: **{player['points']}**\n{items_list}")
 
-@bot.command(name="روليت", aliases=["roulette", "انضم"])
-async def roulette_join_cmd(ctx):
+# ------------------------------------------------------------------------------
+# روليت بتصميم أزرار
+# ------------------------------------------------------------------------------
+class RouletteView(View):
+    def __init__(self, gid, creator_id):
+        super().__init__(timeout=120)
+        self.gid = gid
+        self.creator_id = creator_id
+
+    def build_embed(self):
+        game = active_roulettes.get(self.gid)
+        if not game:
+            return discord.Embed(title="🎰 روليت", color=discord.Color.red())
+        players = game["players"]
+        lines = "\n".join(f"**{i+1}.** <@{uid}>" for i, uid in enumerate(players))
+        embed = discord.Embed(
+            title="🎰 روليت - لعبة الإقصاء",
+            description=f"━━━━━━━━━━━━━━━━━━━━━━━━\n👥 **اللاعبون:**\n{lines}\n━━━━━━━━━━━━━━━━━━━━━━━━",
+            color=discord.Color.gold()
+        )
+        embed.add_field(name="⏳ الحالة", value=f"انتظار لاعبين... ({len(players)}/20)", inline=False)
+        embed.set_footer(text="اضغط انضمام للدخول")
+        return embed
+
+    async def update_message(self, interaction):
+        game = active_roulettes.get(self.gid)
+        if not game:
+            return
+        await interaction.response.edit_message(embed=self.build_embed(), view=self)
+
+    @discord.ui.button(label="🎯 انضمام", style=discord.ButtonStyle.green)
+    async def join_btn(self, interaction, button):
+        if self.gid not in active_roulettes:
+            return await interaction.response.send_message("❌ اللعبة انتهت.", ephemeral=True)
+        game = active_roulettes[self.gid]
+        uid = interaction.user.id
+        if uid in game["players"]:
+            return await interaction.response.send_message("✅ أنت منضم!", ephemeral=True)
+        game["players"].append(uid)
+        game["alive"].append(uid)
+        await self.update_message(interaction)
+
+    @discord.ui.button(label="▶️ بدء", style=discord.ButtonStyle.blurple)
+    async def start_btn(self, interaction, button):
+        if self.gid not in active_roulettes:
+            return await interaction.response.send_message("❌ لا توجد لعبة.", ephemeral=True)
+        game = active_roulettes[self.gid]
+        if interaction.user.id != game["creator"]:
+            return await interaction.response.send_message("❌ فقط المنشئ يبدأ اللعبة.", ephemeral=True)
+        if len(game["players"]) < 2:
+            return await interaction.response.send_message("❌ لازم 2 لاعبين على الأقل.", ephemeral=True)
+        game["phase"] = "playing"
+        for child in self.children:
+            child.disabled = True
+        await interaction.response.edit_message(embed=self.build_embed(), view=self)
+        await run_roulette(interaction.channel, self.gid)
+
+    @discord.ui.button(label="⏹ إلغاء", style=discord.ButtonStyle.red)
+    async def cancel_btn(self, interaction, button):
+        if self.gid not in active_roulettes:
+            return await interaction.response.send_message("❌ لا توجد لعبة.", ephemeral=True)
+        game = active_roulettes[self.gid]
+        if interaction.user.id != game["creator"]:
+            return await interaction.response.send_message("❌ فقط المنشئ يلغي.", ephemeral=True)
+        del active_roulettes[self.gid]
+        for child in self.children:
+            child.disabled = True
+        embed = discord.Embed(title="⏹ أُلغيت", color=discord.Color.red())
+        await interaction.response.edit_message(embed=embed, view=self)
+
+@bot.command(name="روليت", aliases=["roulette"])
+async def roulette_cmd(ctx):
     if ctx.channel.id != GAME_CHANNEL:
         return
-    uid = ctx.author.id
     gid = ctx.channel.id
-    if gid not in active_roulettes:
-        active_roulettes[gid] = {"players": [uid], "alive": [uid], "phase": "joining", "creator": uid}
-        await ctx.send(f"🎰 **روليت** بدأت! {ctx.author.mention} أنشأ اللعبة\nاكتب `.روليت` للانضمام أو `.بدا` لبدء اللعبة")
-        return
-    game = active_roulettes[gid]
-    if game["phase"] != "joining":
-        return await ctx.send("❌ اللعبة已经开始!")
-    if uid in game["players"]:
-        return await ctx.send("✅ أنت منضم بالفعل!")
-    game["players"].append(uid)
-    game["alive"].append(uid)
-    await ctx.send(f"✅ {ctx.author.mention} انضم للروليت! العدد: {len(game['players'])}")
+    if gid in active_roulettes:
+        return await ctx.send("❌ في لعبة already! اضغط انضمام.")
+    active_roulettes[gid] = {"players": [ctx.author.id], "alive": [ctx.author.id], "phase": "joining", "creator": ctx.author.id}
+    view = RouletteView(gid, ctx.author.id)
+    msg = await ctx.send(embed=view.build_embed(), view=view)
+    active_roulettes[gid]["message"] = msg
 
-@bot.command(name="بدا", aliases=["start", "ابدأ"])
-async def roulette_start_cmd(ctx):
-    if ctx.channel.id != GAME_CHANNEL:
+async def run_roulette(channel, gid):
+    game = active_roulettes.get(gid)
+    if not game:
         return
-    gid = ctx.channel.id
-    if gid not in active_roulettes:
-        return await ctx.send("❌ لا توجد لعبة روليت نشطة. اكتب `.روليت`")
-    game = active_roulettes[gid]
-    if game["creator"] != ctx.author.id:
-        return await ctx.send("❌ فقط منشئ اللعبة يستطيع بدءها!")
-    if game["phase"] != "joining":
-        return await ctx.send("❌ اللعبة بدأت بالفعل!")
-    if len(game["players"]) < 2:
-        return await ctx.send("❌ لازم يكون على الأقل 2 لاعبين!")
-    game["phase"] = "playing"
-    await ctx.send(f"🎰 **الروليت بدأت!** عدد اللاعبين: {len(game['players'])}")
-    await run_roulette(ctx)
-
-async def run_roulette(ctx):
-    gid = ctx.channel.id
-    game = active_roulettes[gid]
     alive = game["alive"][:]
     random.shuffle(alive)
     round_num = 0
     while len(alive) > 1:
         round_num += 1
-        await asyncio.sleep(3)
+        await asyncio.sleep(4)
         target = random.choice(alive)
         target_data = get_player(target)
-        # درع ضد الطرد
+        embed = discord.Embed(title=f"🎰 الجولة {round_num}", color=discord.Color.dark_red())
+        desc = ""
+        # درع
         if target_data["shield"] > 0:
             target_data["shield"] -= 1
             save_player(target, target_data)
             other = random.choice([p for p in alive if p != target])
-            await ctx.send(f"🛡 {bot.get_user(target).mention} استخدم **الدرع**! نجا من الإقصاء! {bot.get_user(other).mention} أُقصي بدلاً منه!")
+            desc += f"🛡 <@{target}> استخدم **الدرع**! نجا!\n➡ <@{other}> أُقصي بدلاً عنه!\n"
             alive.remove(other)
-            continue
         # طرد مضاد
-        if target_data["anti_kick"] > 0:
+        elif target_data["anti_kick"] > 0:
             target_data["anti_kick"] -= 1
             save_player(target, target_data)
             other = random.choice([p for p in alive if p != target])
-            await ctx.send(f"🔄 {bot.get_user(target).mention} استخدم **الطرد المضاد**! انعكس الإقصاء على {bot.get_user(other).mention}!")
+            desc += f"🔄 <@{target}> استخدم **الطرد المضاد**! انعكس الإقصاء على <@{other}>!\n"
             alive.remove(other)
-            continue
-        # طرد ثنائي
-        has_double = [p for p in alive if get_player(p)["double_kick"] > 0 and p != target]
-        if has_double and len(alive) > 2:
-            double_user = random.choice(has_double)
-            double_data = get_player(double_user)
-            double_data["double_kick"] -= 1
-            save_player(double_user, double_data)
-            others = [p for p in alive if p != target and p != double_user]
-            if others:
-                second = random.choice(others)
-                alive.remove(second)
-                await ctx.send(f"💥 {bot.get_user(double_user).mention} استخدم **الطرد الثنائي**! {bot.get_user(second).mention} أُقصي معه!")
-        # إقصاء الهدف
-        alive.remove(target)
-        await ctx.send(f"❌ {bot.get_user(target).mention} أُقصي! المتبقي: {len(alive)}")
+        else:
+            # طرد ثنائي
+            has_double = [p for p in alive if p != target and get_player(p)["double_kick"] > 0]
+            if has_double and len(alive) > 2:
+                du = random.choice(has_double)
+                dd = get_player(du)
+                dd["double_kick"] -= 1
+                save_player(du, dd)
+                others = [p for p in alive if p != target and p != du]
+                if others:
+                    second = random.choice(others)
+                    alive.remove(second)
+                    desc += f"💥 <@{du}> استخدم **الطرد الثنائي**! <@{second}> أُقصي معه!\n"
+            # إقصاء الهدف
+            alive.remove(target)
+            desc += f"❌ <@{target}> أُقصي!\n"
+        desc += f"\n🔥 **المتبقي: {len(alive)}** لاعب\n"
+        desc += "\n".join(f"**{i+1}.** <@{uid}>" for i, uid in enumerate(alive))
+        embed.description = desc
+        embed.set_footer(text=f"جولة {round_num}")
+        await channel.send(embed=embed)
+    # الفائز
     winner = alive[0]
     points = random.choice([10, 12, 15, 18, 20, 25])
     pdata = get_player(winner)
     pdata["points"] += points
     save_player(winner, pdata)
-    await ctx.send(f"🏆 **{bot.get_user(winner).mention} فاز بالروليت!** حصل على **{points} نقطة**!")
+    embed = discord.Embed(
+        title="🏆 فائز الروليت!",
+        description=f"━━━━━━━━━━━━━━━━━━━━━━━━\n👑 <@{winner}>\n⭐ +**{points}** نقطة\n━━━━━━━━━━━━━━━━━━━━━━━━",
+        color=discord.Color.gold()
+    )
+    await channel.send(embed=embed)
     del active_roulettes[gid]
 
 # ------------------------------------------------------------------------------
