@@ -1,5 +1,8 @@
 import os
 import logging
+import asyncio
+import json
+import random
 
 import discord
 from discord.ext import commands
@@ -21,6 +24,7 @@ CHANNEL_FOOTBALL = 1528793852222374140
 CHANNEL_ANIME = 1528793894115086527
 CHANNEL_GIRLS = 1532091198960042044
 CHANNEL_GAMES = 1532091509812236420
+GAME_CHANNEL = 1528566822935330989
 
 TAG_MOVIES = "<@&1520098176269418647> <@&1509890356773130352>"
 TAG_FOOTBALL = "<@&1509890421168279645>"
@@ -251,7 +255,7 @@ async def on_ready():
     log.info("البوت جاهز: %s (id=%s)", bot.user, bot.user.id)
     await bot.change_presence(activity=discord.Game(name=".اوامر في شات التصنيف"))
 
-ALLOWED_CHANNELS = {CHANNEL_MOVIES, CHANNEL_FOOTBALL, CHANNEL_ANIME, CHANNEL_GIRLS, CHANNEL_GAMES}
+ALLOWED_CHANNELS = {CHANNEL_MOVIES, CHANNEL_FOOTBALL, CHANNEL_ANIME, CHANNEL_GIRLS, CHANNEL_GAMES, GAME_CHANNEL}
 
 @bot.check
 async def channel_check(ctx):
@@ -264,7 +268,6 @@ async def on_message(message):
 
     # كلام حب ليبي
     if "نحبك" in message.content:
-        import random
         ردود_حب = [
             "يا بعد عيني و قلبي, تسلملي يالغالي.",
             "وانا بعد نحبك قد الدنيا يارب.",
@@ -298,6 +301,11 @@ async def on_message(message):
             "كلمة نحبك منك تكفيني و تخليني اسعد انسان.",
         ]
         await message.channel.send(f"{message.author.mention} {random.choice(ردود_حب)}")
+        await bot.process_commands(message)
+        return
+
+    # شات الألعاب - لا توجد ديباجات هنا
+    if message.channel.id == GAME_CHANNEL:
         await bot.process_commands(message)
         return
 
@@ -347,6 +355,163 @@ def make_template_cmd(num):
 
 for _num in range(1, 16):
     bot.command(name=str(_num))(make_template_cmd(_num))
+
+# ------------------------------------------------------------------------------
+# لعبة الروليت والمتجر
+# ------------------------------------------------------------------------------
+DATA_FILE = "game_data.json"
+
+def load_data():
+    try:
+        with open(DATA_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except:
+        return {"users": {}}
+
+def save_data(data):
+    with open(DATA_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+def get_player(uid):
+    data = load_data()
+    uid = str(uid)
+    if uid not in data["users"]:
+        data["users"][uid] = {"points": 0, "shield": 0, "double_kick": 0, "anti_kick": 0}
+        save_data(data)
+    return data["users"][uid]
+
+def save_player(uid, pdata):
+    data = load_data()
+    data["users"][str(uid)] = pdata
+    save_data(data)
+
+active_roulettes = {}
+
+ITEMS = {
+    "1": {"name": "درع ضد الطرد", "price": 200, "key": "shield", "desc": "يحميك من الإقصاء لمرة واحدة"},
+    "2": {"name": "طرد ثنائي", "price": 150, "key": "double_kick", "desc": "عند إقصائك تأخذ معك شخص آخر"},
+    "3": {"name": "طرد مضاد", "price": 250, "key": "anti_kick", "desc": "يعكس الإقصاء على شخص آخر بدلاً منك"},
+}
+
+@bot.command(name="متجر", aliases=["shop", "المتجر"])
+async def shop_cmd(ctx):
+    if ctx.channel.id != GAME_CHANNEL:
+        return
+    embed = discord.Embed(title="🏪 المتجر", description="نقاطك تستطيع شراء:", color=discord.Color.green())
+    for k, v in ITEMS.items():
+        embed.add_field(name=f"{k}. {v['name']} - {v['price']} نقطة", value=v["desc"], inline=False)
+    embed.set_footer(text="استخدم .شراء [رقم]")
+    await ctx.send(embed=embed)
+
+@bot.command(name="شراء", aliases=["buy"])
+async def buy_cmd(ctx, item_num: str = None):
+    if ctx.channel.id != GAME_CHANNEL:
+        return
+    if not item_num or item_num not in ITEMS:
+        return await ctx.send("❌ استخدم `.شراء 1` أو `2` أو `3`")
+    player = get_player(ctx.author.id)
+    item = ITEMS[item_num]
+    if player["points"] < item["price"]:
+        return await ctx.send(f"❌ معاك {player['points']} نقطة, محتاج {item['price']}")
+    player["points"] -= item["price"]
+    player[item["key"]] += 1
+    save_player(ctx.author.id, player)
+    await ctx.send(f"✅ اشتريت **{item['name']}**! عندك الآن {item['key']}")
+
+@bot.command(name="نقاطي", aliases=["points", "نقاط"])
+async def points_cmd(ctx):
+    if ctx.channel.id != GAME_CHANNEL:
+        return
+    player = get_player(ctx.author.id)
+    items_list = f"🛡 درع: {player['shield']} | 💥 طرد ثنائي: {player['double_kick']} | 🔄 طرد مضاد: {player['anti_kick']}"
+    await ctx.send(f"⭐ {ctx.author.mention} نقاطك: **{player['points']}**\n{items_list}")
+
+@bot.command(name="روليت", aliases=["roulette", "انضم"])
+async def roulette_join_cmd(ctx):
+    if ctx.channel.id != GAME_CHANNEL:
+        return
+    uid = ctx.author.id
+    gid = ctx.channel.id
+    if gid not in active_roulettes:
+        active_roulettes[gid] = {"players": [uid], "alive": [uid], "phase": "joining", "creator": uid}
+        await ctx.send(f"🎰 **روليت** بدأت! {ctx.author.mention} أنشأ اللعبة\nاكتب `.روليت` للانضمام أو `.بدا` لبدء اللعبة")
+        return
+    game = active_roulettes[gid]
+    if game["phase"] != "joining":
+        return await ctx.send("❌ اللعبة已经开始!")
+    if uid in game["players"]:
+        return await ctx.send("✅ أنت منضم بالفعل!")
+    game["players"].append(uid)
+    game["alive"].append(uid)
+    await ctx.send(f"✅ {ctx.author.mention} انضم للروليت! العدد: {len(game['players'])}")
+
+@bot.command(name="بدا", aliases=["start", "ابدأ"])
+async def roulette_start_cmd(ctx):
+    if ctx.channel.id != GAME_CHANNEL:
+        return
+    gid = ctx.channel.id
+    if gid not in active_roulettes:
+        return await ctx.send("❌ لا توجد لعبة روليت نشطة. اكتب `.روليت`")
+    game = active_roulettes[gid]
+    if game["creator"] != ctx.author.id:
+        return await ctx.send("❌ فقط منشئ اللعبة يستطيع بدءها!")
+    if game["phase"] != "joining":
+        return await ctx.send("❌ اللعبة بدأت بالفعل!")
+    if len(game["players"]) < 2:
+        return await ctx.send("❌ لازم يكون على الأقل 2 لاعبين!")
+    game["phase"] = "playing"
+    await ctx.send(f"🎰 **الروليت بدأت!** عدد اللاعبين: {len(game['players'])}")
+    await run_roulette(ctx)
+
+async def run_roulette(ctx):
+    gid = ctx.channel.id
+    game = active_roulettes[gid]
+    alive = game["alive"][:]
+    random.shuffle(alive)
+    round_num = 0
+    while len(alive) > 1:
+        round_num += 1
+        await asyncio.sleep(3)
+        target = random.choice(alive)
+        target_data = get_player(target)
+        # درع ضد الطرد
+        if target_data["shield"] > 0:
+            target_data["shield"] -= 1
+            save_player(target, target_data)
+            other = random.choice([p for p in alive if p != target])
+            await ctx.send(f"🛡 {bot.get_user(target).mention} استخدم **الدرع**! نجا من الإقصاء! {bot.get_user(other).mention} أُقصي بدلاً منه!")
+            alive.remove(other)
+            continue
+        # طرد مضاد
+        if target_data["anti_kick"] > 0:
+            target_data["anti_kick"] -= 1
+            save_player(target, target_data)
+            other = random.choice([p for p in alive if p != target])
+            await ctx.send(f"🔄 {bot.get_user(target).mention} استخدم **الطرد المضاد**! انعكس الإقصاء على {bot.get_user(other).mention}!")
+            alive.remove(other)
+            continue
+        # طرد ثنائي
+        has_double = [p for p in alive if get_player(p)["double_kick"] > 0 and p != target]
+        if has_double and len(alive) > 2:
+            double_user = random.choice(has_double)
+            double_data = get_player(double_user)
+            double_data["double_kick"] -= 1
+            save_player(double_user, double_data)
+            others = [p for p in alive if p != target and p != double_user]
+            if others:
+                second = random.choice(others)
+                alive.remove(second)
+                await ctx.send(f"💥 {bot.get_user(double_user).mention} استخدم **الطرد الثنائي**! {bot.get_user(second).mention} أُقصي معه!")
+        # إقصاء الهدف
+        alive.remove(target)
+        await ctx.send(f"❌ {bot.get_user(target).mention} أُقصي! المتبقي: {len(alive)}")
+    winner = alive[0]
+    points = random.choice([10, 12, 15, 18, 20, 25])
+    pdata = get_player(winner)
+    pdata["points"] += points
+    save_player(winner, pdata)
+    await ctx.send(f"🏆 **{bot.get_user(winner).mention} فاز بالروليت!** حصل على **{points} نقطة**!")
+    del active_roulettes[gid]
 
 # ------------------------------------------------------------------------------
 # تشغيل البوت
