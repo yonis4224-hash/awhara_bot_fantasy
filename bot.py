@@ -427,11 +427,65 @@ async def points_cmd(ctx):
     await ctx.send(f"⭐ {ctx.author.mention} نقاطك: **{player['points']}**\n{items_list}")
 
 # ------------------------------------------------------------------------------
-# روليت بتصميم أزرار
+# روليت بتصميم دائري + عد تنازلي 24 ثانية
 # ------------------------------------------------------------------------------
+import math
+
+def build_circle_layout(alive_ids):
+    n = len(alive_ids)
+    if n == 0:
+        return "لا يوجد لاعبين"
+    radius = 3
+    lines = []
+    grid = [[" " for _ in range(radius * 2 + 1)] for _ in range(radius * 2 + 1)]
+    for i, uid in enumerate(alive_ids):
+        angle = (2 * math.pi * i) / n
+        cx = radius + round(radius * 0.85 * math.cos(angle))
+        cy = radius + round(radius * 0.85 * math.sin(angle))
+        cx = max(0, min(radius * 2, cx))
+        cy = max(0, min(radius * 2, cy))
+        num = str(i + 1)
+        if len(num) == 1:
+            grid[cy][cx] = num
+        else:
+            grid[cy][cx] = num[0]
+            if cx + 1 <= radius * 2:
+                grid[cy][cx + 1] = num[1]
+    for row in grid:
+        lines.append("".join(row))
+    return "```\n" + "\n".join(lines) + "\n```"
+
+def build_player_list(alive_ids):
+    lines = []
+    for i, uid in enumerate(alive_ids):
+        lines.append(f"`{i+1}.` <@{uid}>")
+    return "\n".join(lines)
+
+def build_countdown_bar(seconds_left, total=24):
+    filled = seconds_left
+    empty = total - seconds_left
+    bar = "▓" * filled + "░" * empty
+    return f"```{bar}```\n⏱️ **{seconds_left} ثانية**"
+
+def build_roulette_embed(game, alive, countdown=None, title_prefix=""):
+    n = len(alive)
+    circle = build_circle_layout(alive)
+    player_list = build_player_list(alive)
+    embed = discord.Embed(
+        title=f"{title_prefix}🎯 روليت - الدائرة",
+        color=discord.Color.dark_purple()
+    )
+    embed.add_field(name="🎡 ترتيب اللاعبين", value=circle, inline=False)
+    embed.add_field(name="👥 اللاعبون", value=player_list, inline=True)
+    embed.add_field(name="📊 العدد", value=f"**{n}** لاعب", inline=True)
+    if countdown is not None:
+        embed.add_field(name="⏳ العد التنازلي", value=build_countdown_bar(countdown), inline=False)
+    embed.set_footer(text="🎡 روليت الإقصاء — ضربة حظ!")
+    return embed
+
 class RouletteView(View):
     def __init__(self, gid, creator_id):
-        super().__init__(timeout=120)
+        super().__init__(timeout=180)
         self.gid = gid
         self.creator_id = creator_id
 
@@ -440,15 +494,7 @@ class RouletteView(View):
         if not game:
             return discord.Embed(title="🎰 روليت", color=discord.Color.red())
         players = game["players"]
-        lines = "\n".join(f"**{i+1}.** <@{uid}>" for i, uid in enumerate(players))
-        embed = discord.Embed(
-            title="🎰 روليت - لعبة الإقصاء",
-            description=f"━━━━━━━━━━━━━━━━━━━━━━━━\n👥 **اللاعبون:**\n{lines}\n━━━━━━━━━━━━━━━━━━━━━━━━",
-            color=discord.Color.gold()
-        )
-        embed.add_field(name="⏳ الحالة", value=f"انتظار لاعبين... ({len(players)}/20)", inline=False)
-        embed.set_footer(text="اضغط انضمام للدخول")
-        return embed
+        return build_roulette_embed(game, players)
 
     async def update_message(self, interaction):
         game = active_roulettes.get(self.gid)
@@ -464,6 +510,8 @@ class RouletteView(View):
         uid = interaction.user.id
         if uid in game["players"]:
             return await interaction.response.send_message("✅ أنت منضم!", ephemeral=True)
+        if len(game["players"]) >= 20:
+            return await interaction.response.send_message("❌ الحد الأقصى 20 لاعب.", ephemeral=True)
         game["players"].append(uid)
         game["alive"].append(uid)
         await self.update_message(interaction)
@@ -477,10 +525,11 @@ class RouletteView(View):
             return await interaction.response.send_message("❌ فقط المنشئ يبدأ اللعبة.", ephemeral=True)
         if len(game["players"]) < 2:
             return await interaction.response.send_message("❌ لازم 2 لاعبين على الأقل.", ephemeral=True)
-        game["phase"] = "playing"
+        game["phase"] = "countdown"
         for child in self.children:
             child.disabled = True
         await interaction.response.edit_message(embed=self.build_embed(), view=self)
+        await run_countdown(interaction.channel, self.gid)
         await run_roulette(interaction.channel, self.gid)
 
     @discord.ui.button(label="⏹ إلغاء", style=discord.ButtonStyle.red)
@@ -502,11 +551,33 @@ async def roulette_cmd(ctx):
         return
     gid = ctx.channel.id
     if gid in active_roulettes:
-        return await ctx.send("❌ في لعبة already! اضغط انضمام.")
+        return await ctx.send("❌ في لعبة جارية! اضغط انضمام.")
     active_roulettes[gid] = {"players": [ctx.author.id], "alive": [ctx.author.id], "phase": "joining", "creator": ctx.author.id}
     view = RouletteView(gid, ctx.author.id)
     msg = await ctx.send(embed=view.build_embed(), view=view)
     active_roulettes[gid]["message"] = msg
+
+async def run_countdown(channel, gid):
+    game = active_roulettes.get(gid)
+    if not game:
+        return
+    msg = game["message"]
+    players = game["players"][:]
+    for sec in range(24, 0, -1):
+        if gid not in active_roulettes:
+            return
+        try:
+            embed = build_roulette_embed(game, players, countdown=sec, title_prefix=f"⏱️ {sec} | ")
+            await msg.edit(embed=embed)
+        except:
+            pass
+        await asyncio.sleep(1)
+    if gid in active_roulettes:
+        try:
+            embed = build_roulette_embed(game, players, countdown=0, title_prefix="🚀 بدأ! | ")
+            await msg.edit(embed=embed)
+        except:
+            pass
 
 async def run_roulette(channel, gid):
     game = active_roulettes.get(gid)
@@ -517,27 +588,33 @@ async def run_roulette(channel, gid):
     round_num = 0
     while len(alive) > 1:
         round_num += 1
-        await asyncio.sleep(4)
+        await asyncio.sleep(3)
         target = random.choice(alive)
         target_data = get_player(target)
-        embed = discord.Embed(title=f"🎰 الجولة {round_num}", color=discord.Color.dark_red())
+        embed = discord.Embed(
+            title=f"💀 الجولة {round_num} — الإقصاء",
+            color=discord.Color.dark_red()
+        )
         desc = ""
-        # درع
+        eliminated_this_round = []
+        saved_this_round = []
         if target_data["shield"] > 0:
             target_data["shield"] -= 1
             save_player(target, target_data)
             other = random.choice([p for p in alive if p != target])
-            desc += f"🛡 <@{target}> استخدم **الدرع**! نجا!\n➡ <@{other}> أُقصي بدلاً عنه!\n"
+            desc += f"🛡️ <@{target}> استخدم **الدرع**! نجا!\n➡️ <@{other}> أُقصي بدلاً عنه!\n"
+            eliminated_this_round.append(other)
+            saved_this_round.append(target)
             alive.remove(other)
-        # طرد مضاد
         elif target_data["anti_kick"] > 0:
             target_data["anti_kick"] -= 1
             save_player(target, target_data)
             other = random.choice([p for p in alive if p != target])
             desc += f"🔄 <@{target}> استخدم **الطرد المضاد**! انعكس الإقصاء على <@{other}>!\n"
+            eliminated_this_round.append(other)
+            saved_this_round.append(target)
             alive.remove(other)
         else:
-            # طرد ثنائي
             has_double = [p for p in alive if p != target and get_player(p)["double_kick"] > 0]
             if has_double and len(alive) > 2:
                 du = random.choice(has_double)
@@ -548,16 +625,16 @@ async def run_roulette(channel, gid):
                 if others:
                     second = random.choice(others)
                     alive.remove(second)
+                    eliminated_this_round.append(second)
                     desc += f"💥 <@{du}> استخدم **الطرد الثنائي**! <@{second}> أُقصي معه!\n"
-            # إقصاء الهدف
             alive.remove(target)
+            eliminated_this_round.append(target)
             desc += f"❌ <@{target}> أُقصي!\n"
-        desc += f"\n🔥 **المتبقي: {len(alive)}** لاعب\n"
-        desc += "\n".join(f"**{i+1}.** <@{uid}>" for i, uid in enumerate(alive))
+        circle = build_circle_layout(alive)
+        desc += f"\n━━━━━━━━━━━━━━━━━━━━━━━━\n🔥 **المتبقي: {len(alive)}** لاعب\n{circle}"
         embed.description = desc
-        embed.set_footer(text=f"جولة {round_num}")
+        embed.set_footer(text=f"جولة {round_num} | 💀 الإقصاء")
         await channel.send(embed=embed)
-    # الفائز
     winner = alive[0]
     points = random.choice([10, 12, 15, 18, 20, 25])
     pdata = get_player(winner)
