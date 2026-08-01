@@ -472,7 +472,7 @@ C_MAIN = 0xD4A017   # amber gold
 C_KILL = 0x8B0000    # dark red
 C_OK = 0x2E7D32      # dark green
 C_INFO = 0x1E3A5F    # deep blue
-WAITING_TIME = 60
+WAITING_TIME = 27
 MAX_SEATS = 40
 HOWTO = ("**1-** انضم في اللعبة\n"
          "**2-** ستبدأ الجولة الأولى وسيتم تدوير العجلة واختيار لاعب عشوائي\n"
