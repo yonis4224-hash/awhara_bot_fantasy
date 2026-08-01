@@ -528,7 +528,17 @@ async def roulette_cmd(ctx):
     m2 = await ctx.send(view=v2)
     g["v1"], g["v2"], g["m1"], g["m2"] = v1, v2, m1, m2
 
-    await asyncio.sleep(WAITING_TIME)
+    end_time = time.time() + WAITING_TIME
+    while time.time() < end_time:
+        if gid not in active_roulettes:
+            return await ctx.send("❌ | تم إيقاف الجولة بواسطة المسؤولين")
+        remaining = int(end_time - time.time())
+        e.set_field_at(1, name="__ستبدأ اللعبة خلال__:", value=f"**{remaining} ثانية**")
+        try:
+            await m1.edit(embed=e)
+        except Exception:
+            pass
+        await asyncio.sleep(1)
 
     if gid not in active_roulettes:
         return await ctx.send("❌ | تم إيقاف الجولة بواسطة المسؤولين")
