@@ -744,54 +744,50 @@ async def roulette_cmd(ctx):
     g = {"id": game_id, "players": [], "btns": {}, "log": [], "kill_count": {}}
     active_roulettes[gid] = g
 
+    e = discord.Embed(title="روليت", color=0xE4F000,
+                      description=f"__**اللاعبين:**__\n{roulette_players_text([])}")
+    e.add_field(name="__طريقة اللاعب:__", value=HOWTO)
+    e.add_field(name="__ستبدأ اللعبة خلال__:",
+                value=f"**<t:{int(time.time() + WAITING_TIME)}:R>**")
+    g["embed"] = e
+
+    v1 = JoinView(gid, game_id, 1, 25)
+    v2 = JoinView(gid, game_id, 26, 40)
+    v2.add_item(JoinBtn(gid, game_id, is_random=True, row=3))
+    v2.add_item(JoinBtn(gid, game_id, is_leave=True, row=3))
+    v2.add_item(ShopOpenBtn(gid, game_id, row=3))
+    for v in (v1, v2):
+        for b in v.children:
+            if b.number:
+                g["btns"][b.number] = b
+
+    m1 = await ctx.send(embed=e, view=v1)
+    m2 = await ctx.send(view=v2)
+    g["v1"], g["v2"], g["m1"], g["m2"] = v1, v2, m1, m2
+
+    await asyncio.sleep(WAITING_TIME)
+
+    if gid not in active_roulettes:
+        return
+    for v in (v1, v2):
+        for b in v.children:
+            b.disabled = True
+    e.color = 0x0FF000
+    e.clear_fields()
+    e.add_field(name="__طريقة اللاعب:__", value=HOWTO)
     try:
-        e = discord.Embed(title="روليت", color=0xE4F000,
-                          description=f"__**اللاعبين:**__\n{roulette_players_text([])}")
-        e.add_field(name="__طريقة اللاعب:__", value=HOWTO)
-        e.add_field(name="__ستبدأ اللعبة خلال__:",
-                    value=f"**<t:{int(time.time() + WAITING_TIME)}:R>**")
-        g["embed"] = e
+        await m1.edit(embed=e, view=v1)
+        await m2.edit(view=v2)
+    except Exception:
+        pass
 
-        v1 = JoinView(gid, game_id, 1, 25)
-        v2 = JoinView(gid, game_id, 26, 40)
-        v2.add_item(JoinBtn(gid, game_id, is_random=True, row=3))
-        v2.add_item(JoinBtn(gid, game_id, is_leave=True, row=3))
-        v2.add_item(ShopOpenBtn(gid, game_id, row=3))
-        for v in (v1, v2):
-            for b in v.children:
-                if b.number:
-                    g["btns"][b.number] = b
-
-        m1 = await ctx.send(embed=e, view=v1)
-        m2 = await ctx.send(view=v2)
-        g["v1"], g["v2"], g["m1"], g["m2"] = v1, v2, m1, m2
-
-        await asyncio.sleep(WAITING_TIME)
-
-        if gid not in active_roulettes:
-            return
-        for v in (v1, v2):
-            for b in v.children:
-                b.disabled = True
-        e.color = 0x0FF000
-        e.clear_fields()
-        e.add_field(name="__طريقة اللاعب:__", value=HOWTO)
-        try:
-            await m1.edit(embed=e, view=v1)
-            await m2.edit(view=v2)
-        except Exception:
-            pass
-
-        if len(g["players"]) < 3:
-            await ctx.send("🚫 | تم إلغاء اللعبة لعدم وجود 3 لاعبين على الأقل")
-            del active_roulettes[gid]
-            return
-        g["participants"] = [p["id"] for p in g["players"]]
-        await ctx.send("✅ | تم توزيع الأرقام على كل لاعب. ستبدأ الجولة الأولى في بضع ثواني...")
-        await run_game(ctx, gid)
-    finally:
-        if gid in active_roulettes:
-            del active_roulettes[gid]
+    if len(g["players"]) < 3:
+        await ctx.send("🚫 | تم إلغاء اللعبة لعدم وجود 3 لاعبين على الأقل")
+        del active_roulettes[gid]
+        return
+    g["participants"] = [p["id"] for p in g["players"]]
+    await ctx.send("✅ | تم توزيع الأرقام على كل لاعب. ستبدأ الجولة الأولى في بضع ثواني...")
+    await run_game(ctx, gid)
 
 
 @bot.command(name="توقف", aliases=["stop"])
@@ -806,34 +802,6 @@ async def stop_cmd(ctx):
 
 
 async def run_game(ctx, gid):
-    try:
-        await _run_game_inner(ctx, gid)
-    except Exception as e:
-        log.exception("خطأ أثناء جولة الروليت: %s", e)
-        if gid in active_roulettes:
-            g = active_roulettes.pop(gid)
-            try:
-                for key in ("v1", "v2"):
-                    v = g.get(key)
-                    if v:
-                        for b in v.children:
-                            b.disabled = True
-                av = g.get("active_view")
-                if av:
-                    for b in av.children:
-                        b.disabled = True
-                if g.get("m1"):
-                    await g["m1"].edit(view=g["v1"])
-                if g.get("m2"):
-                    await g["m2"].edit(view=g["v2"])
-                if g.get("active_msg"):
-                    await g["active_msg"].edit(view=g["active_view"])
-            except Exception:
-                pass
-            await ctx.send("⚠️ حدث خطأ في اللعبة، تم إيقاف الجولة.")
-
-
-async def _run_game_inner(ctx, gid):
     if gid not in active_roulettes:
         return await ctx.send("❌ | تم إيقاف الجولة بواسطة المسؤولين")
     g = active_roulettes[gid]
@@ -879,7 +847,6 @@ async def _run_game_inner(ctx, gid):
 
     view = KickView(gid, winner, players)
     msg = await ctx.send(f"<@{winner['id']}> لديك **30 ثانية** لإختيار لاعب لطرده", view=view)
-    g["active_view"], g["active_msg"] = view, msg
     await view.wait()
 
     if gid not in active_roulettes:
