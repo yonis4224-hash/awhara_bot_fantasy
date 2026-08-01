@@ -436,7 +436,7 @@ async def leaderboard_cmd(ctx):
     for uid, p in data["users"].items():
         users.append((uid, p["wins"], p["points"], p["eliminations"], p["games"]))
     users.sort(key=lambda x: (-x[1], -x[2]))
-    e = discord.Embed(title="🏆 Leaderboard", color=C_GOLD)
+    e = discord.Embed(title="🏆 Leaderboard", color=C_MAIN)
     e.description = "```\n" + "─" * 22 + "```"
     for i, (uid, wins, pts, elims, games) in enumerate(users[:10]):
         medal = ["🥇", "🥈", "🥉"][i] if i < 3 else f"`{i+1:02d}`"
@@ -455,7 +455,7 @@ async def stats_cmd(ctx):
         return
     p = get_player(ctx.author.id)
     ratio = f"{p['wins']/p['games']:.0%}" if p["games"] > 0 else "N/A"
-    e = discord.Embed(title="📊 Player Stats", color=C_TEAL)
+    e = discord.Embed(title="📊 Player Stats", color=C_INFO)
     e.description = f"```\n{'─' * 18}\n STATISTICS\n{'─' * 18}```"
     e.add_field(name="Player", value=ctx.author.mention, inline=False)
     e.add_field(name="Wins", value=str(p["wins"]), inline=True)
@@ -469,32 +469,58 @@ async def stats_cmd(ctx):
 # ------------------------------------------------------------------------------
 # روليت — تصميم احترافي
 # ------------------------------------------------------------------------------
-C_NAVY = 0x1A1D23
-C_CRIMSON = 0x3D0C0C
-C_DARK = 0x5C0E0E
-C_GOLD = 0x594300
-C_TEAL = 0x004D4D
-SEP = "━" * 24
+C_MAIN = 0xD4A017   # amber gold
+C_KILL = 0x8B0000    # dark red
+C_OK = 0x2E7D32      # dark green
+C_INFO = 0x1E3A5F    # deep blue
+SPIN_CH = ["◐", "◓", "◑", "◒"]
+SEP = "▬" * 26
 
-def plist(ids, highlight=None):
+def plist(ids, cur=None):
     return "\n".join(
-        f"`{i+1:02d}` <@{uid}>{' ◂' if highlight is not None and uid == highlight else ''}"
+        f"{'▸' if cur is not None and uid == cur else ' '} `{i+1:02d}` <@{uid}>"
         for i, uid in enumerate(ids)
     )
 
+def wheel(ids, cursor_idx=None):
+    n = len(ids)
+    if n == 0:
+        return "```\n(no players)\n```"
+    R = 4 if n <= 8 else 5 if n <= 14 else 6
+    W = R * 2 + 3
+    H = R * 2 + 1
+    g = [["   " for _ in range(W)] for _ in range(H)]
+    cx, cy = (W - 1) // 2, R
+    g[cy][cx] = " ◉ "
+    for i in range(n):
+        a = (2 * math.pi * i) / n - math.pi / 2
+        x = cx + round(R * 0.85 * math.cos(a))
+        y = cy + round(R * 0.85 * math.sin(a))
+        x = max(0, min(W - 1, x))
+        y = max(0, min(H - 1, y))
+        g[y][x] = f"{i+1:>2} "
+    if cursor_idx is not None:
+        a = (2 * math.pi * cursor_idx) / n - math.pi / 2
+        x = cx + round(R * 1.05 * math.cos(a))
+        y = cy + round(R * 1.05 * math.sin(a))
+        x = max(0, min(W - 1, x))
+        y = max(0, min(H - 1, y))
+        g[y][x] = " ▼"
+    return "```\n" + "\n".join("".join(r) for r in g) + "\n```"
+
 def cbar(sec):
-    bar = "▰" * sec + "▱" * (20 - sec)
-    return f"`{bar}` `{sec}s`"
+    return f"`{'▰' * sec}{'▱' * (20 - sec)}` `{sec}s`"
 
 def jembed(gid, sec):
     g = active_roulettes.get(gid)
     if not g:
-        return discord.Embed(title="Roulette", color=C_NAVY)
-    e = discord.Embed(title="🎯 Roulette", color=C_NAVY)
-    e.description = f"```\n{'─' * 18}\n JOIN — {sec:02d}s\n{'─' * 18}```"
+        return discord.Embed(title="Roulette", color=C_INFO)
+    e = discord.Embed(title="🎯 Roulette", color=C_MAIN)
+    e.description = f"`{'─' * 22}`\n**JOIN THE GAME**\n`{'─' * 22}`"
+    e.add_field(name="Wheel", value=wheel(g["players"]), inline=False)
     e.add_field(name="Players", value=plist(g["players"]), inline=False)
     e.add_field(name="Countdown", value=cbar(sec), inline=False)
-    e.set_footer(text=f"⏳ {len(g['players'])}/20 — انتظار...")
+    e.set_footer(text=f"⏳ {len(g['players'])}/20 — waiting for players...")
     return e
 
 class JoinView(View):
@@ -522,11 +548,12 @@ class JoinView(View):
                 pass
 
 class KickSelect(discord.ui.Select):
-    def __init__(self, gid, sid, aids):
+    def __init__(self, gid, sid, aids, names):
         opts = []
-        for idx, uid in enumerate(aids):
+        for uid in aids:
             if uid != sid:
-                opts.append(discord.SelectOption(label=f"Kick {idx+1}", value=str(uid)))
+                nm = names.get(uid, f"Player {uid}")[:50]
+                opts.append(discord.SelectOption(label=nm, value=str(uid), description="Eliminate this player"))
         super().__init__(placeholder="Choose player to eliminate...", min_values=1, max_values=1, options=opts[:25])
         self.chosen = None
 
@@ -538,36 +565,38 @@ class KickSelect(discord.ui.Select):
         await ia.response.defer()
 
 class RoundView(View):
-    def __init__(self, gid, sid, aids):
+    def __init__(self, gid, sid, aids, names):
         super().__init__(timeout=15)
         self.sid = sid
         self.gid = gid
-        self._sel = KickSelect(gid, sid, aids)
+        self._sel = KickSelect(gid, sid, aids, names)
         self.add_item(self._sel)
 
     @property
     def chosen_id(self):
         return self._sel.chosen
 
-async def spin(ctx, gid, aids, target, rn):
+async def spin(ctx, gid, aids, target, rn, avatars):
     n = len(aids)
     ti = aids.index(target)
-    fr = 10
+    fr = 12
     msg = None
     for f in range(fr):
         if gid not in active_roulettes:
             return None
-        d = 0.1 + (f / fr) * 0.4
+        d = 0.08 + (f / fr) * 0.35
         si = (ti + (fr - f) * 2) % n if f < fr - 1 else ti
         su = aids[si]
-        e = discord.Embed(title=f"🎯 Round {rn}" if f < fr - 1 else f"🎯 Round {rn} — Selected", color=C_CRIMSON if f < fr - 1 else 0x8B0000)
-        e.description = f"```\n{'─' * 18}\n SPINNING\n{'─' * 18}```" if f < fr - 1 else f"```\n{'─' * 18}\n TARGET LOCKED\n{'─' * 18}```"
-        e.add_field(name="Players", value=plist(aids, highlight=su), inline=False)
+        e = discord.Embed(title=f"🎯 Round {rn}", color=C_MAIN if f < fr - 1 else C_KILL)
+        e.description = f"{SPIN_CH[f % 4]} **Spinning the wheel...**" if f < fr - 1 else "🎯 **Target locked!**"
+        e.add_field(name="Wheel", value=wheel(aids, cursor_idx=si), inline=False)
+        e.add_field(name="Players", value=plist(aids, cur=su), inline=False)
         if f < fr - 1:
-            e.set_footer(text="⟳ Scanning...")
+            e.set_footer(text=f"Round {rn} — scanning...")
         else:
+            e.set_thumbnail(url=avatars.get(target))
             e.add_field(name="Selected", value=f"<@{target}>", inline=False)
-            e.set_footer(text="⏱ 15s to eliminate")
+            e.set_footer(text=f"Round {rn} — ⏱ 15s to eliminate")
         if msg:
             try:
                 await msg.edit(embed=e)
@@ -584,7 +613,7 @@ async def roulette_cmd(ctx):
         return
     gid = ctx.channel.id
     if gid in active_roulettes:
-        return await ctx.send("❌ Game in progress.")
+        return await ctx.send("❌ A game is already in progress.")
 
     active_roulettes[gid] = {"players": [ctx.author.id], "alive": [ctx.author.id], "phase": "joining", "creator": ctx.author.id, "countdown": 20, "log": [], "kill_count": {}}
     view = JoinView(gid)
@@ -612,7 +641,7 @@ async def roulette_cmd(ctx):
 
     g = active_roulettes[gid]
     if len(g["players"]) < 2:
-        await ctx.send(embed=discord.Embed(title="❌ Not enough players.", color=C_DARK))
+        await ctx.send(embed=discord.Embed(title="❌ Not enough players.", color=C_KILL))
         del active_roulettes[gid]
         return
     await run_game(ctx, gid, msg)
@@ -625,8 +654,21 @@ async def run_game(ctx, gid, sm):
     random.shuffle(alive)
     rn = 0
 
-    e = discord.Embed(title="🎯 Game Started", color=C_TEAL)
-    e.description = f"```\n{'─' * 18}\n {len(alive)} PLAYERS\n{'─' * 18}```"
+    avatars = {}
+    names = {}
+    for uid in game["players"]:
+        u = bot.get_user(uid)
+        if not u:
+            try:
+                u = await bot.fetch_user(uid)
+            except:
+                u = None
+        avatars[uid] = u.display_avatar.url if u else None
+        names[uid] = u.display_name if u else f"Player {uid}"
+
+    e = discord.Embed(title="🎯 Roulette — Game On", color=C_OK)
+    e.description = f"`{'─' * 22}`\n**GAME STARTED**\n`{'─' * 22}`"
+    e.add_field(name="Wheel", value=wheel(alive), inline=False)
     e.add_field(name="Players", value=plist(alive), inline=False)
     try:
         await sm.edit(embed=e, view=None)
@@ -637,7 +679,7 @@ async def run_game(ctx, gid, sm):
         rn += 1
         sel = random.choice(alive)
 
-        await spin(ctx, gid, alive, sel, rn)
+        await spin(ctx, gid, alive, sel, rn, avatars)
         if gid not in active_roulettes:
             return
         alive = [p for p in active_roulettes[gid]["alive"] if p in alive]
@@ -650,8 +692,15 @@ async def run_game(ctx, gid, sm):
             reason = f"⚔️ <@{sel}> eliminated <@{other}>"
             await asyncio.sleep(2)
         else:
-            view = RoundView(gid, sel, alive)
-            await ctx.send("🎯 Choose:", view=view)
+            view = RoundView(gid, sel, alive, names)
+            ce = discord.Embed(
+                title=f"🎯 Round {rn} — Your Move",
+                description=f"`{'─' * 22}`\n**{names.get(sel, 'Player')}** — pick who gets eliminated\n`{'─' * 22}`",
+                color=C_MAIN
+            )
+            ce.set_thumbnail(url=avatars.get(sel))
+            ce.set_footer(text="⏱ 15 seconds — or you get eliminated")
+            await ctx.send(embed=ce, view=view)
             await view.wait()
             if gid not in active_roulettes:
                 return
@@ -740,10 +789,12 @@ async def run_game(ctx, gid, sm):
         if gid in active_roulettes:
             active_roulettes[gid]["alive"] = [p for p in alive]
 
-        re = discord.Embed(title=f"💀 Round {rn} — Eliminated", color=C_DARK)
-        re.description = f"```\n{'─' * 18}\n {len(alive)} REMAINING\n{'─' * 18}```"
+        re = discord.Embed(title=f"💀 Round {rn} — Eliminated", color=C_KILL)
+        re.set_thumbnail(url=avatars.get(elim))
+        re.description = f"`{'─' * 22}`\n**{len(alive)} REMAINING**\n`{'─' * 22}`"
         re.add_field(name="Result", value=desc, inline=False)
         re.add_field(name="Alive", value=plist(alive), inline=False)
+        re.set_footer(text=f"Round {rn}")
         await ctx.send(embed=re)
 
     if gid not in active_roulettes:
@@ -770,8 +821,9 @@ async def run_game(ctx, gid, sm):
         f"<@{uid}>: {cnt}" for uid, cnt in sorted(game["kill_count"].items(), key=lambda x: -x[1])
     ) or "None"
 
-    we = discord.Embed(title="🏆 Match Summary", color=C_GOLD)
-    we.description = f"```\n{'─' * 18}\n CHAMPION\n{'─' * 18}```"
+    we = discord.Embed(title="🏆 Match Summary", color=C_MAIN)
+    we.set_thumbnail(url=avatars.get(winner))
+    we.description = f"`{'─' * 22}`\n**CHAMPION**\n`{'─' * 22}`"
     we.add_field(name="Winner", value=f"<@{winner}>", inline=True)
     we.add_field(name="Reward", value=f"+{pts} pts", inline=True)
     we.add_field(name="Players", value=f"{len(all_uids)}", inline=True)
