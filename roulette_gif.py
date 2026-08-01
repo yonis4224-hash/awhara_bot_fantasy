@@ -63,28 +63,38 @@ def _build_frame(players, rot):
     draw.polygon([(CX - 24, 6), (CX + 24, 6), (CX, 52)], fill=(255, 60, 60))
     draw.polygon([(CX - 24, 6), (CX + 24, 6), (CX, 52)], outline=(0, 0, 0))
     font = _get_font(22)
+    av_r = int(max(26, min(66, (R - 75) * math.tan(math.pi / n))))
     for i, p in enumerate(players):
         ang = math.radians(rot + i * seg + seg / 2)
         av = p.get("img")
         if av:
             avx = CX + (R - 75) * math.cos(ang)
             avy = CY + (R - 75) * math.sin(ang)
-            av = _crop_circle(av, 66)
-            img.paste(av, (int(avx - 33), int(avy - 33)), av)
+            av = _crop_circle(av, av_r)
+            img.paste(av, (int(avx - av_r / 2), int(avy - av_r / 2)), av)
         nx = CX + (R - 115) * math.cos(ang)
         ny = CY + (R - 115) * math.sin(ang)
         _center(draw, nx, ny, str(p["number"]), font, (255, 255, 255))
     return img
 
-def make_gif_sync(players):
+def make_gif_sync(players, highlight=None):
+    n = len(players)
+    seg = 360.0 / n
+    if highlight is not None and n > 0:
+        end_rot = 270 - (highlight + 0.5) * seg
+    else:
+        end_rot = 0
+    start_rot = end_rot - 4 * 360
     frames = []
     for f in range(16):
-        frames.append(_build_frame(players, f * (360.0 / 16)))
+        t = f / 15.0
+        eased = 1 - (1 - t) ** 3
+        frames.append(_build_frame(players, start_rot + 4 * 360 * eased))
     buf = io.BytesIO()
     frames[0].save(buf, format="GIF", save_all=True, append_images=frames[1:],
                    duration=70, loop=0)
     buf.seek(0)
     return buf
 
-async def make_gif(players):
-    return await asyncio.to_thread(make_gif_sync, players)
+async def make_gif(players, highlight=None):
+    return await asyncio.to_thread(make_gif_sync, players, highlight)
