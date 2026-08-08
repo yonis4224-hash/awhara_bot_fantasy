@@ -508,17 +508,68 @@ class RandomKickBtn(discord.ui.Button):
         await ia.response.defer()
 
 
-class DoubleKickBtn(discord.ui.Button):
-    def __init__(self, row):
-        super().__init__(label="⚡ طرد ثنائي (خاصية)", style=discord.ButtonStyle.success,
-                         custom_id="double_kick_btn", row=row)
+class DoubleKickSelect(discord.ui.Select):
+    """قائمة اختيار لاعبين اثنين للطرد الثنائي"""
+    def __init__(self, others):
+        options = [
+            discord.SelectOption(
+                label=f"{p['number']}. {p['username']}"[:100],
+                value=str(p["number"]),
+                description=f"طرد اللاعب رقم {p['number']}"
+            )
+            for p in others[:25]
+        ]
+        super().__init__(
+            placeholder="🎯 اختر لاعبين لطردهم بالطرد الثنائي...",
+            min_values=1,
+            max_values=min(2, len(options)),
+            options=options
+        )
 
     async def callback(self, ia):
         if ia.user.id != self.view.winner["id"]:
             return await ia.response.send_message("❌ | فقط الشخص الذي لديه الدور يمكنه الاختيار", ephemeral=True)
-        self.view.choice = ("double_kick", None)
+        nums = [int(v) for v in self.values]
+        self.view.kick_view.choice = ("double_kick_select", nums)
+        self.view.kick_view.stop()
         self.view.stop()
         await ia.response.defer()
+
+
+class DoubleKickSelectView(View):
+    """واجهة خاصة بقائمة الطرد الثنائي"""
+    def __init__(self, winner, others, kick_view):
+        super().__init__(timeout=30)
+        self.winner = winner
+        self.kick_view = kick_view
+        self.add_item(DoubleKickSelect(others))
+
+    @discord.ui.button(label="إلغاء الطرد الثنائي ↩️", style=discord.ButtonStyle.secondary, row=1)
+    async def cancel_btn(self, ia, button):
+        if ia.user.id != self.winner["id"]:
+            return await ia.response.send_message("❌ | فقط الشخص الذي لديه الدور يمكنه الاختيار", ephemeral=True)
+        self.stop()
+        await ia.response.defer()
+
+
+class DoubleKickBtn(discord.ui.Button):
+    def __init__(self, winner, others):
+        super().__init__(label="⚡ طرد ثنائي", style=discord.ButtonStyle.success,
+                         custom_id="double_kick_btn", row=4)
+        self.winner = winner
+        self.others = others
+
+    async def callback(self, ia):
+        if ia.user.id != self.view.winner["id"]:
+            return await ia.response.send_message("❌ | فقط الشخص الذي لديه الدور يمكنه الاختيار", ephemeral=True)
+        # Open the double kick selection menu as ephemeral so only the winner sees it
+        dk_view = DoubleKickSelectView(self.winner, self.others, self.view)
+        await ia.response.send_message(
+            f"⚡ **طرد ثنائي** | اختر لاعباً أو لاعبين من القائمة أدناه لطردهم:",
+            view=dk_view,
+            ephemeral=True
+        )
+        await dk_view.wait()
 
 
 class WithdrawBtn(discord.ui.Button):
@@ -541,17 +592,21 @@ class KickView(View):
         self.gid = gid
         self.winner = winner
         self.choice = None
-        others = [p for p in players if p["id"] != winner["id"]][:20]
-        row_count = 0
-        for i, p in enumerate(others):
-            self.add_item(KickBtn(p, row=i // 5))
-            row_count = (i // 5) + 1
 
-        row_count = min(row_count, 4)
-        self.add_item(RandomKickBtn(row=row_count))
+        others = [p for p in players if p["id"] != winner["id"]]
+
+        # Player buttons — rows 0..3 (max 20 players = 4 rows × 5)
+        for i, p in enumerate(others[:20]):
+            self.add_item(KickBtn(p, row=min(i // 5, 3)))
+
+        # Action buttons always in row 4 (bottom row)
+        self.add_item(RandomKickBtn(row=4))
+        self.add_item(WithdrawBtn(gid, row=4))
+
+        # Double kick button shown only if winner owns the item
         if has_item(winner["id"], "double_kick"):
-            self.add_item(DoubleKickBtn(row=row_count))
-        self.add_item(WithdrawBtn(gid, row=row_count))
+            self.add_item(DoubleKickBtn(winner, others))
+
 
 
 @bot.command(name="متجر", aliases=["shop", "المتجر"])
@@ -736,22 +791,44 @@ async def run_game(ctx, gid):
                 g["players"] = [p for p in g["players"] if p["id"] != victim["id"]]
                 return await run_game(ctx, gid)
 
-        elif c_type == "double_kick":
+        elif c_type in ("double_kick", "double_kick_select"):
             if use_item(winner["id"], "double_kick"):
-                targets = random.sample(others, min(2, len(others))) if others else []
+                # double_kick_select = user manually chose targets (list of numbers)
+                # double_kick = fallback (shouldn't happen anymore but kept for safety)
+                if c_type == "double_kick_select" and c_val:
+                    targets = [p for p in players if p["number"] in c_val]
+                else:
+                    targets = random.sample(others, min(2, len(others))) if others else []
+
                 kicked_names = []
+                pts_earned = 0
                 for victim in targets:
-                    if use_item(victim["id"], "shield"):
+                    # Check reverse kick first
+                    if use_item(victim["id"], "reverse_kick"):
+                        v_pts = add_points(victim["id"], 1)
+                        kicked_names.append(f"<@{victim['id']}> (🔄 ردّ الضربة!)")
+                        g["players"] = [p for p in g["players"] if p["id"] != winner["id"]]
+                        await ctx.send(
+                            f"🔄 **طرد عكسي!** حاول <@{winner['id']}> طرد <@{victim['id']}> بالطرد الثنائي، "
+                            f"لكن **الطرد العكسي 🔄** أنقذه وطرد المهاجم بدلاً منه! وحصل <@{victim['id']}> على **+1 نقطة** (نقاطه: {v_pts})"
+                        )
+                        return await run_game(ctx, gid)
+                    # Check shield
+                    elif use_item(victim["id"], "shield"):
                         kicked_names.append(f"<@{victim['id']}> (نجا بالدرع 🛡️)")
                     else:
                         g["players"] = [p for p in g["players"] if p["id"] != victim["id"]]
                         kicked_names.append(f"<@{victim['id']}>")
+                        pts_earned += 1
 
-                kicker_pts = add_points(winner["id"], len(targets))
-                t_str = " و ".join(kicked_names)
-                await ctx.send(f"⚡ **طرد ثنائي!** استخدم <@{winner['id']}> خاصية الطرد الثنائي واستهدف: {t_str}!\n"
-                               f"حصل <@{winner['id']}> على **+{len(targets)} نقاط** 🎯 (إجمالي نقاطه: {kicker_pts}).")
+                kicker_pts = add_points(winner["id"], pts_earned)
+                t_str = " و ".join(kicked_names) if kicked_names else "لا أحد"
+                await ctx.send(
+                    f"⚡ **طرد ثنائي!** استخدم <@{winner['id']}> خاصية الطرد الثنائي واستهدف: {t_str}!\n"
+                    f"حصل <@{winner['id']}> على **+{pts_earned} نقاط** 🎯 (إجمالي نقاطه: {kicker_pts})."
+                )
                 return await run_game(ctx, gid)
+
 
         elif c_type == "withdraw":
             await ctx.send(f"💣 | لقد انسحب <@{winner['id']}> من اللعبة ، سيتم بدء الجولة القادمة في بضع ثواني...")
