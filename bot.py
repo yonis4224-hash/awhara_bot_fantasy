@@ -581,9 +581,14 @@ async def roulette_cmd(ctx):
         return await ctx.send("❌ | فقط Manga Events يمكنهم قيام بهذا الامر")
     gid = ctx.channel.id
     if gid in active_roulettes:
-        return await ctx.send("❌ يوجد جولة تعمل الان بالفعل")
+        old = active_roulettes.get(gid)
+        # تنظيف الجولات العالقة (بدون مشرف تنتهي مهلتها تلقائياً)
+        if old and (time.time() - (old.get("created_at") or 0)) > 600:
+            del active_roulettes[gid]
+        else:
+            return await ctx.send("❌ يوجد جولة تعمل الان بالفعل")
     game_id = int(time.time() * 1000)
-    g = {"id": game_id, "players": [], "btns": {}}
+    g = {"id": game_id, "players": [], "btns": {}, "created_at": time.time()}
     active_roulettes[gid] = g
 
     e = discord.Embed(title="روليت", color=0xE4F000,
@@ -638,7 +643,11 @@ async def roulette_cmd(ctx):
         del active_roulettes[gid]
         return
     await ctx.send("✅ | تم توزيع الأرقام على كل لاعب. ستبدأ الجولة الأولى في بضع ثواني...")
-    await run_game(ctx, gid)
+    try:
+        await run_game(ctx, gid)
+    finally:
+        # ضمان تنظيف حالة اللعبة حتى لو حدث خطأ
+        active_roulettes.pop(gid, None)
 
 
 @bot.command(name="توقف", aliases=["stop"])
