@@ -251,8 +251,16 @@ class CatView(View):
         self.add_item(CatSelect(cat))
 
 # ------------------------------------------------------------------------------
-# أحداث البوت
+# أحداث البوت وإضافات الألعاب
 # ------------------------------------------------------------------------------
+from tarneeb_cog import TarneebCog
+
+async def setup_hook():
+    await bot.add_cog(TarneebCog(bot))
+    log.info("✅ تم تحميل إضافة لعبة الطرنيب (TarneebCog) بنجاح!")
+
+bot.setup_hook = setup_hook
+
 @bot.event
 async def on_ready():
     log.info("البوت جاهز: %s (id=%s)", bot.user, bot.user.id)
