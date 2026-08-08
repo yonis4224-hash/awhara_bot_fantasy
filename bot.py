@@ -468,6 +468,17 @@ class JoinView(View):
             self.add_item(JoinBtn(gid, game_id, number=num, row=((num - start) // 5)))
 
 
+class ShopOpenBtn(discord.ui.Button):
+    def __init__(self, row=3):
+        super().__init__(label="متجر الخواص 🏪", style=discord.ButtonStyle.primary,
+                         custom_id="open_roulette_shop_btn", row=row)
+
+    async def callback(self, ia):
+        view = RouletteShopView(ia.user)
+        embed = view.build_embed()
+        await ia.response.send_message(embed=embed, view=view, ephemeral=True)
+
+
 class KickBtn(discord.ui.Button):
     def __init__(self, player, row):
         super().__init__(label=f"{player['number']}. {player['username']}"[:80],
@@ -586,6 +597,7 @@ async def roulette_cmd(ctx):
     v2 = JoinView(gid, game_id, 26, 40)
     v2.add_item(JoinBtn(gid, game_id, is_random=True, row=3))
     v2.add_item(JoinBtn(gid, game_id, is_leave=True, row=3))
+    v2.add_item(ShopOpenBtn(row=3))
     for v in (v1, v2):
         for b in v.children:
             if b.number:

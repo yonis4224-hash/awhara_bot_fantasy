@@ -151,27 +151,24 @@ class RouletteShopView(View):
         if interaction.user.id != self.user.id:
             return await interaction.response.send_message("❌ هذا المتجر لـ شخص آخر!", ephemeral=True)
         ok, msg = buy_item(self.user.id, "shield")
-        await interaction.response.send_message(msg, ephemeral=True)
-        if ok:
-            await interaction.message.edit(embed=self.build_embed(), view=self)
+        await interaction.response.edit_message(embed=self.build_embed(), view=self)
+        await interaction.followup.send(msg, ephemeral=True)
 
     @discord.ui.button(label="شراء طرد ثنائي (20)", style=discord.ButtonStyle.primary, emoji="⚡")
     async def buy_double(self, interaction: discord.Interaction, button: Button):
         if interaction.user.id != self.user.id:
             return await interaction.response.send_message("❌ هذا المتجر لـ شخص آخر!", ephemeral=True)
         ok, msg = buy_item(self.user.id, "double_kick")
-        await interaction.response.send_message(msg, ephemeral=True)
-        if ok:
-            await interaction.message.edit(embed=self.build_embed(), view=self)
+        await interaction.response.edit_message(embed=self.build_embed(), view=self)
+        await interaction.followup.send(msg, ephemeral=True)
 
     @discord.ui.button(label="شراء طرد عكسي (25)", style=discord.ButtonStyle.danger, emoji="🔄")
     async def buy_reverse(self, interaction: discord.Interaction, button: Button):
         if interaction.user.id != self.user.id:
             return await interaction.response.send_message("❌ هذا المتجر لـ شخص آخر!", ephemeral=True)
         ok, msg = buy_item(self.user.id, "reverse_kick")
-        await interaction.response.send_message(msg, ephemeral=True)
-        if ok:
-            await interaction.message.edit(embed=self.build_embed(), view=self)
+        await interaction.response.edit_message(embed=self.build_embed(), view=self)
+        await interaction.followup.send(msg, ephemeral=True)
 
     @discord.ui.button(label="تحديث 🔄", style=discord.ButtonStyle.secondary)
     async def refresh_btn(self, interaction: discord.Interaction, button: Button):
