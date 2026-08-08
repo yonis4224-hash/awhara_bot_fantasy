@@ -1,0 +1,3 @@
+badgr:
+  base_url: "https://api.badgr.io/v2"
+  # Token is loaded from BADGR_TOKEN environment variable - do not store here
