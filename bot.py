@@ -674,12 +674,12 @@ async def run_game(ctx, gid):
         if "avimg" not in p:
             p["avimg"] = await download_avatar(p.get("avatarURL"))
 
-    gif = await make_gif([{"number": p["number"], "img": p.get("avimg")} for p in players],
-                         highlight=len(players) - 1)
+    img_file = await make_gif([{"number": p["number"], "img": p.get("avimg")} for p in players],
+                             highlight=len(players) - 1)
     content = f"**{winner['number']}** - <@{winner['id']}>"
     if len(players) <= 2:
         content += "\n:crown: **هذه الجولة الأخيرة ! اللاعب المختار هو اللاعب الفائز في اللعبة.**"
-    await ctx.send(content=content, file=discord.File(gif, filename="roulette.gif"))
+    await ctx.send(content=content, file=discord.File(img_file, filename="roulette.png"))
 
     if len(players) <= 2:
         winner_pts = add_points(winner["id"], 3)

@@ -77,24 +77,25 @@ def _build_frame(players, rot):
         _center(draw, nx, ny, str(p["number"]), font, (255, 255, 255))
     return img
 
-def make_gif_sync(players, highlight=None):
+def make_image_sync(players, highlight=None):
     n = len(players)
-    seg = 360.0 / n
-    if highlight is not None and n > 0:
-        end_rot = 270 - (highlight + 0.5) * seg
+    if n > 0:
+        seg = 360.0 / n
+        if highlight is not None:
+            end_rot = 270 - (highlight + 0.5) * seg
+        else:
+            end_rot = 0
     else:
         end_rot = 0
-    start_rot = end_rot - 4 * 360
-    frames = []
-    for f in range(16):
-        t = f / 15.0
-        eased = 1 - (1 - t) ** 3
-        frames.append(_build_frame(players, start_rot + 4 * 360 * eased))
+
+    img = _build_frame(players, end_rot)
     buf = io.BytesIO()
-    frames[0].save(buf, format="GIF", save_all=True, append_images=frames[1:],
-                   duration=70, loop=0)
+    img.save(buf, format="PNG")
     buf.seek(0)
     return buf
 
-async def make_gif(players, highlight=None):
-    return await asyncio.to_thread(make_gif_sync, players, highlight)
+async def make_image(players, highlight=None):
+    return await asyncio.to_thread(make_image_sync, players, highlight)
+
+# Backward compatibility alias
+make_gif = make_image
