@@ -472,6 +472,7 @@ class ShopOpenBtn(discord.ui.Button):
     def __init__(self, row=3):
         super().__init__(label="متجر الخواص 🏪", style=discord.ButtonStyle.primary,
                          custom_id="open_roulette_shop_btn", row=row)
+        self.number = None
 
     async def callback(self, ia):
         view = RouletteShopView(ia.user)
@@ -605,7 +606,7 @@ async def roulette_cmd(ctx):
     v2.add_item(ShopOpenBtn(row=3))
     for v in (v1, v2):
         for b in v.children:
-            if b.number:
+            if getattr(b, "number", None) is not None:
                 g["btns"][b.number] = b
 
     m1 = await ctx.send(embed=e, view=v1)

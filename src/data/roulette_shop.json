@@ -6,5 +6,13 @@
       "double_kick": 2,
       "reverse_kick": 0
     }
+  },
+  "1001": {
+    "points": 0,
+    "inventory": {
+      "shield": 0,
+      "double_kick": 0,
+      "reverse_kick": 0
+    }
   }
 }
