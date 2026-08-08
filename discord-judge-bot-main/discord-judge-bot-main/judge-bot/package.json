@@ -1,0 +1,33 @@
+{
+  "name": "scorebot",
+  "version": "1.0.0",
+  "description": "Discord Challenge & Reward System",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "nodemon index.js",
+    "deploy": "node deploy-commands.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "discord",
+    "bot",
+    "challenges",
+    "rewards",
+    "badges"
+  ],
+  "author": "gl0bal01",
+  "license": "MIT",
+  "dependencies": {
+    "@discordjs/builders": "^1.6.3",
+    "@discordjs/rest": "^2.4.3",
+    "axios": "^1.4.0",
+    "discord-api-types": "^0.38.26",
+    "discord.js": "^14.11.0",
+    "dotenv": "^16.4.7",
+    "js-yaml": "^4.1.0",
+    "sqlite": "^4.2.1",
+    "sqlite3": "^5.1.6",
+    "winston": "^3.9.0"
+  }
+}

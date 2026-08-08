@@ -1,0 +1,52 @@
+bot:
+  # Command rate limits (in seconds)
+  rate_limits:
+    judge: 2
+    register_email: 5
+    progress: 5  # renamed from judgeme
+    leaderboard: 10  # renamed from judgeall
+    help: 5
+    games: 5
+    hint: 3
+    submit: 2
+  
+  # Points system
+  points:
+    starting_points: 100
+    hint_base_penalty: 10     # Base points deducted for first hint
+    hint_penalty_increase: 5  # Additional penalty for each subsequent hint
+  
+  # Maker role ID (use Discord role ID, not role name)
+  maker_role_id: "0000000000000000000"  # Replace with your Maker role ID
+
+  # Admin users who can access all commands
+  admins:
+    - "1111111111111111"  # Discord user ID for admin
+
+  # Rate limits for maker commands (in seconds)
+  maker_rate_limits:
+    maker: 5
+    maker-manage: 5
+    maker-advanced: 5
+
+  # Success announcement settings
+  success_announcements:
+    enabled: true
+    channel_id: "111111111111111"  # Discord channel ID where successes will be announced
+    show_reward_details: false  # Whether to show detailed reward information (false for security)
+    ping_everyone: false  # Whether to @everyone on success announcements
+    ping_role_id: null  # Optional role ID to ping on success announcements
+    milestone_messages:  # Special messages for milestones
+      first_completion: "Welcome to the champions! 🌟 {{user}} just completed their first challenge!"
+      all_completed: "Incredible achievement! 🏆 {{user}} has completed ALL challenges!"
+
+  game_announcements:
+    enabled: true
+    channel_id: "111111111111111"  # Discord channel ID where game approvals will be announced
+    ping_makers: true  # Whether to ping the game creator in announcements
+    ping_role_id: null  # Optional role ID to ping on announcements (e.g., a "Makers" role)
+
+# Logging configuration
+logging:
+  level: "INFO"
+  file: "scorebot.log"

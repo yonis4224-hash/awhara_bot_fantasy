@@ -1,0 +1,15 @@
+PEPSI:
+  name: PEPSI
+  description: Full name of the 9th finisher of this course and his official time.
+  author: discord_author
+  owner_id: 'xxxxx'
+  answer: the_right_answer
+  difficulty: 1
+  reward_type: text
+  creation_date: '2025-04-01'
+  hints:
+    - Pay attention on the image, you have nearly all the answers
+    - What this course is about, where, i think i can also see a number
+    - Easiest way is to look on Octocat
+  reward_text: >-
+    The law walks. And right now, it’s walking over you. I'M THE LAW! ✅

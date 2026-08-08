@@ -1,0 +1,365 @@
+# Discord Judge Bot - .gitignore
+
+# Environment Variables and Secrets
+.env
+.env.local
+.env.development
+.env.test
+.env.production
+.env.*.local
+
+# Discord Bot Tokens and API Keys
+config/secrets.yaml
+config/tokens.yaml
+config/api.yaml
+*.token
+*.key
+
+# Node.js Dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+.pnpm-debug.log*
+
+# Package Manager Files
+yarn.lock
+.pnpm-lock.yaml
+
+# Runtime Data
+pids/
+*.pid
+*.seed
+*.pid.lock
+
+# Coverage and Testing
+coverage/
+*.lcov
+.nyc_output/
+.coverage/
+.cache/
+
+# Logs and Debugging
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+.pnpm-debug.log*
+
+# Database Files
+data/
+*.db
+*.sqlite
+*.sqlite3
+database.db
+scorebot.db
+
+# Backup Files
+*.backup
+*.bak
+*.tmp
+*~
+.backup/
+backups/
+
+# IDE and Editor Files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# OS Generated Files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Temporary Files
+tmp/
+temp/
+.tmp/
+.temp/
+
+# Build Output
+dist/
+build/
+out/
+
+# Runtime Files
+.next/
+.nuxt/
+.cache/
+.parcel-cache/
+
+# Optional npm cache directory
+.npm
+
+# Optional REPL history
+.node_repl_history
+
+# Output of 'npm pack'
+*.tgz
+
+# Yarn Integrity file
+.yarn-integrity
+
+# dotenv environment variables file
+.env
+.env.test
+.env.production
+
+# parcel-bundler cache (https://parceljs.org/)
+.cache
+.parcel-cache
+
+# Next.js build output
+.next
+
+# Nuxt.js build / generate output
+.nuxt
+dist
+
+# Gatsby files
+.cache/
+public
+
+# Storybook build outputs
+.out
+.storybook-out
+
+# Temporary folders
+tmp/
+temp/
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# Diagnostic reports (https://nodejs.org/api/report.html)
+report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Coverage directory used by tools like istanbul
+coverage
+*.lcov
+
+# nyc test coverage
+.nyc_output
+
+# Grunt intermediate storage (https://gruntjs.com/creating-plugins#storing-task-files)
+.grunt
+
+# Bower dependency directory (https://bower.io/)
+bower_components
+
+# node-waf configuration
+.lock-wscript
+
+# Compiled binary addons (https://nodejs.org/api/addons.html)
+build/Release
+
+# Dependency directories
+node_modules/
+jspm_packages/
+
+# Snowpack dependency directory (https://snowpack.dev/)
+web_modules/
+
+# TypeScript cache
+*.tsbuildinfo
+
+# Optional npm cache directory
+.npm
+
+# Optional eslint cache
+.eslintcache
+
+# Microbundle cache
+.rpt2_cache/
+.rts2_cache_cjs/
+.rts2_cache_es/
+.rts2_cache_umd/
+
+# Optional REPL history
+.node_repl_history
+
+# Output of 'npm pack'
+*.tgz
+
+# Yarn Integrity file
+.yarn-integrity
+
+# dotenv environment variable files
+.env
+.env.development.local
+.env.test.local
+.env.production.local
+.env.local
+
+# parcel-bundler cache (https://parceljs.org/)
+.cache
+.parcel-cache
+
+# Next.js build output
+.next
+out
+
+# Nuxt.js build / generate output
+.nuxt
+dist
+
+# Gatsby files
+.cache/
+# Comment in the public line in if your project uses Gatsby and not Next.js
+# https://nextjs.org/blog/next-9-1#public-directory-support
+# public
+
+# Vuepress build output
+.vuepress/dist
+
+# Serverless directories
+.serverless/
+
+# FuseBox cache
+.fusebox/
+
+# DynamoDB Local files
+.dynamodb/
+
+# TernJS port file
+.tern-port
+
+# Stores VSCode versions used for testing VSCode extensions
+.vscode-test
+
+# yarn v2
+.yarn/cache
+.yarn/unplugged
+.yarn/build-state.yml
+.yarn/install-state.gz
+.pnp.*
+
+# Discord Bot Specific Files
+# Game configuration backups
+config/games/*.backup
+config/games/*.bak
+
+# User data exports
+exports/
+user-data/
+
+# Command deployment logs
+deployment.log
+command-errors.log
+
+# Test files and mock data
+test-data/
+mock-games/
+*.test.db
+
+# Generated documentation
+docs/generated/
+api-docs/
+
+# Monitoring and analytics
+analytics/
+metrics/
+
+# Process managers
+.pm2/
+
+# Docker
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# Kubernetes
+k8s/
+*.yaml.backup
+
+# Terraform
+*.tfstate
+*.tfstate.*
+.terraform/
+
+# Local development
+.local/
+dev-config/
+local-settings.yaml
+
+# Error dumps
+*.dmp
+error-*.log
+
+# Performance logs
+perf-*.log
+
+# Memory dumps
+heap-*.heapsnapshot
+
+# Security scan reports
+security-report.json
+audit-report.json
+
+# Changelog drafts
+CHANGELOG.draft.md
+
+# Custom user scripts
+scripts/local/
+custom-commands/
+
+# Badge class ID backups (sensitive)
+badge-classes.backup
+*.badge-backup
+
+# Email templates (may contain sensitive info)
+email-templates/local/
+
+# Local configuration overrides
+config/local.yaml
+config/development.yaml
+config/production.yaml
+local.config.js
+
+# Generated files
+generated/
+auto-generated/
+
+# Temporary downloads
+downloads/
+*.download
+
+# Cache directories
+.cache/
+cache/
+
+# Local SSL certificates
+*.pem
+*.crt
+*.key
+ssl/
+
+# Local development databases
+dev.db
+test.db
+local.db

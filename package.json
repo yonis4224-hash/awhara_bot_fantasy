@@ -1,0 +1,22 @@
+{
+  "name": "ohara-bot",
+  "version": "1.0.0",
+  "description": "أوهارا - بوت ديسكورد لإدارة الفرق والدوريات ومحاكاة المباريات",
+  "main": "src/index.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node src/index.js"
+  },
+  "keywords": [
+    "discord",
+    "football",
+    "manager",
+    "arabic"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "discord.js": "^14.16.3",
+    "dotenv": "^16.4.5"
+  }
+}

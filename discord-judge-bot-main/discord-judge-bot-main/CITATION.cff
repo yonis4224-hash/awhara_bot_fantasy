@@ -1,0 +1,33 @@
+cff-version: 1.2.0
+
+message: "If you use this software, please cite it using the metadata from this file."
+title: "Discord Judge Bot"
+type: "software"
+
+abstract: >
+  A powerful Discord bot for creating and managing challenges with digital badge
+  rewards and progress tracking. Features role-based challenge creation,
+  comprehensive user statistics, and automated reward distribution.
+
+keywords:
+  - "Discord"
+  - "Bot"
+  - "Game"
+  - "Game management"
+
+authors:
+  - given-names: "Fabien"
+    family-names: "Grenier"
+    alias: "gl0bal01"
+    orcid: "https://orcid.org/0009-0003-0062-4876"
+
+repository-code: "https://github.com/gl0bal01/discord-judge-bot"
+url: "https://github.com/gl0bal01/discord-judge-bot"
+
+license: "MIT"
+
+version: "1.0.0"
+date-released: "2025-06-23"
+commit: "main"
+
+doi: "10.5281/zenodo.15741823"
