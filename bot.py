@@ -6,6 +6,10 @@ import math
 import time
 
 from roulette_gif import make_gif, download_avatar
+from roulette_shop import (
+    RouletteShopView, get_user_data, add_points, get_points,
+    buy_item, has_item, use_item, ITEMS
+)
 
 import discord
 from discord.ext import commands
@@ -479,6 +483,32 @@ class KickBtn(discord.ui.Button):
         await ia.response.defer()
 
 
+class RandomKickBtn(discord.ui.Button):
+    def __init__(self, row):
+        super().__init__(label="🎲 طرد عشوائي", style=discord.ButtonStyle.primary,
+                         custom_id="random_kick_btn", row=row)
+
+    async def callback(self, ia):
+        if ia.user.id != self.view.winner["id"]:
+            return await ia.response.send_message("❌ | فقط الشخص الذي لديه الدور يمكنه الاختيار", ephemeral=True)
+        self.view.choice = ("random_kick", None)
+        self.view.stop()
+        await ia.response.defer()
+
+
+class DoubleKickBtn(discord.ui.Button):
+    def __init__(self, row):
+        super().__init__(label="⚡ طرد ثنائي (خاصية)", style=discord.ButtonStyle.success,
+                         custom_id="double_kick_btn", row=row)
+
+    async def callback(self, ia):
+        if ia.user.id != self.view.winner["id"]:
+            return await ia.response.send_message("❌ | فقط الشخص الذي لديه الدور يمكنه الاختيار", ephemeral=True)
+        self.view.choice = ("double_kick", None)
+        self.view.stop()
+        await ia.response.defer()
+
+
 class WithdrawBtn(discord.ui.Button):
     def __init__(self, gid, row):
         super().__init__(label="انسحاب", style=discord.ButtonStyle.danger,
@@ -499,10 +529,39 @@ class KickView(View):
         self.gid = gid
         self.winner = winner
         self.choice = None
-        others = [p for p in players if p["id"] != winner["id"]][:24]
+        others = [p for p in players if p["id"] != winner["id"]][:20]
+        row_count = 0
         for i, p in enumerate(others):
             self.add_item(KickBtn(p, row=i // 5))
-        self.add_item(WithdrawBtn(gid, row=len(others) // 5))
+            row_count = (i // 5) + 1
+
+        row_count = min(row_count, 4)
+        self.add_item(RandomKickBtn(row=row_count))
+        if has_item(winner["id"], "double_kick"):
+            self.add_item(DoubleKickBtn(row=row_count))
+        self.add_item(WithdrawBtn(gid, row=row_count))
+
+
+@bot.command(name="متجر", aliases=["shop", "المتجر"])
+async def shop_cmd(ctx):
+    """فتح متجر خواص الروليت"""
+    view = RouletteShopView(ctx.author)
+    embed = view.build_embed()
+    await ctx.send(embed=embed, view=view)
+
+
+@bot.command(name="نقاطي", aliases=["points", "النقاط"])
+async def points_cmd(ctx):
+    """عرض نقاطك ومخزون الخواص لديك"""
+    u = get_user_data(ctx.author.id)
+    pts = u.get("points", 0)
+    inv = u.get("inventory", {})
+    text = (f"💰 **رصيد النقاط الخاص بك يا <@{ctx.author.id}>:** `{pts}` نقطة\n\n"
+            f"📦 **الخواص بالمخزون:**\n"
+            f"• درع ضد الطرد 🛡️: `{inv.get('shield', 0)}`\n"
+            f"• طرد ثنائي ⚡: `{inv.get('double_kick', 0)}`\n"
+            f"• طرد عكسي 🔄: `{inv.get('reverse_kick', 0)}`")
+    await ctx.send(text)
 
 
 @bot.command(name="روليت", aliases=["roulette"])
@@ -601,7 +660,8 @@ async def run_game(ctx, gid):
     await ctx.send(content=content, file=discord.File(gif, filename="roulette.gif"))
 
     if len(players) <= 2:
-        await ctx.send(f":crown: - فاز <@{winner['id']}> في اللعبة")
+        winner_pts = add_points(winner["id"], 3)
+        await ctx.send(f":crown: - **فاز <@{winner['id']}> في اللعبة وحصل على 3 نقاط! 🎉 (إجمالي نقاطه: {winner_pts})**")
         del active_roulettes[gid]
         return
 
@@ -619,23 +679,66 @@ async def run_game(ctx, gid):
         pass
 
     choice = view.choice
-    if choice and choice[0] == "kick":
-        victim = next((p for p in players if p["number"] == choice[1]), None)
-        if not victim:
-            await ctx.send(f"💣 | تم طرد <@{winner['id']}> من اللعبة لعدم تفاعله ، سيتم بدء الجولة القادمة في بضع ثواني...")
+    others = [p for p in players if p["id"] != winner["id"]]
+
+    if choice:
+        c_type, c_val = choice
+        if c_type in ("kick", "random_kick"):
+            if c_type == "kick":
+                victim = next((p for p in players if p["number"] == c_val), None)
+            else:
+                victim = random.choice(others) if others else None
+
+            if not victim:
+                await ctx.send(f"💣 | تم طرد <@{winner['id']}> من اللعبة لعدم تفاعله ، سيتم بدء الجولة القادمة في بضع ثواني...")
+                g["players"] = [p for p in g["players"] if p["id"] != winner["id"]]
+                return await run_game(ctx, gid)
+
+            # Check Target for Reverse Kick
+            if use_item(victim["id"], "reverse_kick"):
+                v_pts = add_points(victim["id"], 1)
+                await ctx.send(f"🔄 **طرد عكسي!** حاول <@{winner['id']}> طرد <@{victim['id']}>، لكن <@{victim['id']}> يمتلك خاصية **الطرد العكسي 🔄**!\n"
+                               f"انعكست الضربة وطُرد المعتدي <@{winner['id']}> من اللعبة! وحصل <@{victim['id']}> على **+1 نقطة** 🎯 (نقاطه: {v_pts})")
+                g["players"] = [p for p in g["players"] if p["id"] != winner["id"]]
+                return await run_game(ctx, gid)
+
+            # Check Target for Shield
+            elif use_item(victim["id"], "shield"):
+                await ctx.send(f"🛡️ **درع ضد الطرد!** حاول <@{winner['id']}> طرد <@{victim['id']}>، لكن **الدرع 🛡️** حمى <@{victim['id']}> وتم تدمير الدرع!\n"
+                               f"نجا <@{victim['id']}> وتستمر اللعبة بدون أي طرد هذه الجولة.")
+                return await run_game(ctx, gid)
+
+            else:
+                kicker_pts = add_points(winner["id"], 1)
+                await ctx.send(f"💣 | تم طرد <@{victim['id']}> من اللعبة وحصل <@{winner['id']}> على **+1 نقطة** 🎯 (نقاطه: {kicker_pts}) ، سيتم بدء الجولة القادمة في بضع ثواني...")
+                g["players"] = [p for p in g["players"] if p["id"] != victim["id"]]
+                return await run_game(ctx, gid)
+
+        elif c_type == "double_kick":
+            if use_item(winner["id"], "double_kick"):
+                targets = random.sample(others, min(2, len(others))) if others else []
+                kicked_names = []
+                for victim in targets:
+                    if use_item(victim["id"], "shield"):
+                        kicked_names.append(f"<@{victim['id']}> (نجا بالدرع 🛡️)")
+                    else:
+                        g["players"] = [p for p in g["players"] if p["id"] != victim["id"]]
+                        kicked_names.append(f"<@{victim['id']}>")
+
+                kicker_pts = add_points(winner["id"], len(targets))
+                t_str = " و ".join(kicked_names)
+                await ctx.send(f"⚡ **طرد ثنائي!** استخدم <@{winner['id']}> خاصية الطرد الثنائي واستهدف: {t_str}!\n"
+                               f"حصل <@{winner['id']}> على **+{len(targets)} نقاط** 🎯 (إجمالي نقاطه: {kicker_pts}).")
+                return await run_game(ctx, gid)
+
+        elif c_type == "withdraw":
+            await ctx.send(f"💣 | لقد انسحب <@{winner['id']}> من اللعبة ، سيتم بدء الجولة القادمة في بضع ثواني...")
             g["players"] = [p for p in g["players"] if p["id"] != winner["id"]]
             return await run_game(ctx, gid)
-        await ctx.send(f"💣 | تم طرد <@{victim['id']}> من اللعبة ، سيتم بدء الجولة القادمة في بضع ثواني...")
-        g["players"] = [p for p in g["players"] if p["id"] != victim["id"]]
-        await run_game(ctx, gid)
-    elif choice and choice[0] == "withdraw":
-        await ctx.send(f"💣 | لقد انسحب <@{winner['id']}> من اللعبة ، سيتم بدء الجولة القادمة في بضع ثواني...")
-        g["players"] = [p for p in g["players"] if p["id"] != winner["id"]]
-        await run_game(ctx, gid)
-    else:
-        await ctx.send(f"💣 | تم طرد <@{winner['id']}> من اللعبة لعدم تفاعله ، سيتم بدء الجولة القادمة في بضع ثواني...")
-        g["players"] = [p for p in g["players"] if p["id"] != winner["id"]]
-        await run_game(ctx, gid)
+
+    await ctx.send(f"💣 | تم طرد <@{winner['id']}> من اللعبة لعدم تفاعله ، سيتم بدء الجولة القادمة في بضع ثواني...")
+    g["players"] = [p for p in g["players"] if p["id"] != winner["id"]]
+    await run_game(ctx, gid)
 
 # ------------------------------------------------------------------------------
 # تشغيل البوت
