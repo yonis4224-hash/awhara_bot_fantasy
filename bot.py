@@ -277,8 +277,8 @@ async def on_message(message):
     if message.author.bot:
         return
 
-    # كلام حب ليبي
-    if message.channel.id in ALLOWED_CHANNELS and "نحبك" in message.content:
+    # كلام حب ليبي - فقط إذا كتب "نحبك" بالضبط
+    if message.content.strip() == "نحبك":
         ردود_حب = [
             "يا بعد عيني و قلبي, تسلملي يالغالي.",
             "وانا بعد نحبك قد الدنيا يارب.",
