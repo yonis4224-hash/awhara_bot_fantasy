@@ -180,6 +180,10 @@ class BasraCog(commands.Cog):
         return embed
 
     async def update_table(self, channel, game):
+        # إذا لم تعد اللعبة مسجلة (انتهت/أُلغيت) تجاهل التحديث لمنع إحياء طاولة قديمة
+        if channel.id not in active_basra_games or active_basra_games.get(channel.id) is not game:
+            return
+
         # 1. Process AI turns if active player is AI
         await self.check_and_process_ai(channel, game)
 

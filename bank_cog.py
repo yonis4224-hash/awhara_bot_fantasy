@@ -196,6 +196,10 @@ class BankCog(commands.Cog):
         return embed
 
     async def update_board(self, channel, game):
+        # إذا لم تعد اللعبة مسجلة (انتهت/أُلغيت) تجاهل التحديث لمنع إحياء رقعة قديمة
+        if channel.id not in active_bank_games or active_bank_games.get(channel.id) is not game:
+            return
+
         # 1. Process AI turns if active player is AI
         await self.check_and_process_ai(channel, game)
 

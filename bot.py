@@ -264,6 +264,35 @@ from basra_cog import BasraCog
 # سجل مركزي لجميع الألعاب النشطة (channel_id -> game_type)
 active_all_games = {}
 
+def find_active_game(channel_id):
+    """يبحث عن أي لعبة نشطة في القناة من جميع السجلات ويعيد نوعها (أو None).
+    يفحص السجل المركزي أولاً ثم سجلات كل لعبة مباشرة حتى لا تختفي لعبة
+    حقيقية بسبب عدم تزامن السجلات."""
+    t = active_all_games.get(channel_id)
+    if t:
+        return t
+    if channel_id in active_roulettes:
+        return "roulette"
+    try:
+        from basra_cog import active_basra_games
+        if channel_id in active_basra_games:
+            return "scopa"
+    except Exception:
+        pass
+    try:
+        from bank_cog import active_bank_games
+        if channel_id in active_bank_games:
+            return "bank"
+    except Exception:
+        pass
+    try:
+        from tarneeb_cog import active_games as active_tarneeb
+        if channel_id in active_tarneeb:
+            return "tarneeb"
+    except Exception:
+        pass
+    return None
+
 def register_game(channel_id, game_type):
     """تسجيل لعبة جديدة في القناة"""
     active_all_games[channel_id] = game_type
@@ -274,11 +303,11 @@ def unregister_game(channel_id):
 
 def get_active_game(channel_id):
     """الحصول على نوع اللعبة النشطة في القناة"""
-    return active_all_games.get(channel_id)
+    return find_active_game(channel_id)
 
 def has_active_game(channel_id):
     """التحقق من وجود لعبة نشطة في القناة"""
-    return channel_id in active_all_games
+    return find_active_game(channel_id) is not None
 
 async def setup_hook():
     await bot.add_cog(TarneebCog(bot))
@@ -779,25 +808,21 @@ async def stop_cmd(ctx):
 async def end_any_game(ctx):
     """إنهاء أي لعبة نشطة في هذا الروم"""
     cid = ctx.channel.id
-    game_type = get_active_game(cid)
-    
+    game_type = find_active_game(cid)
+
     if not game_type:
         return await ctx.send("❌ لا توجد لعبة قيد التشغيل في هذا الروم!")
-    
-    # إنهاء اللعبة حسب نوعها
-    if game_type == "roulette":
-        active_roulettes.pop(cid, None)
-    elif game_type in ("basra", "scopa"):
-        from basra_cog import active_basra_games
-        active_basra_games.pop(cid, None)
-    elif game_type == "bank":
-        from bank_cog import active_bank_games
-        active_bank_games.pop(cid, None)
-    elif game_type == "tarneeb":
-        from tarneeb_cog import active_games as active_tarneeb
-        active_tarneeb.pop(cid, None)
-    
-    unregister_game(cid)
+
+    # تنظيف جميع السجلات لضمان إزالة اللعبة نهائياً مهما كان مصدرها
+    active_all_games.pop(cid, None)
+    active_roulettes.pop(cid, None)
+    from basra_cog import active_basra_games
+    active_basra_games.pop(cid, None)
+    from bank_cog import active_bank_games
+    active_bank_games.pop(cid, None)
+    from tarneeb_cog import active_games as active_tarneeb
+    active_tarneeb.pop(cid, None)
+
     await ctx.send(f"✅ تم إنهاء لعبة **{game_type}** في هذا الروم بواسطة <@{ctx.author.id}>!")
 
 
