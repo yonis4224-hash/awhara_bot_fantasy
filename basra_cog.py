@@ -145,6 +145,8 @@ class BasraLobbyView(View):
 
         if interaction.channel.id in active_basra_games:
             del active_basra_games[interaction.channel.id]
+        from bot import unregister_game
+        unregister_game(interaction.channel.id)
         await interaction.response.edit_message(content="❌ **تم إلغاء طاولة البصرة.**", embed=None, view=None)
 
 
@@ -195,6 +197,8 @@ class BasraCog(commands.Cog):
             content = game.log_msg
             if channel.id in active_basra_games:
                 del active_basra_games[channel.id]
+            from bot import unregister_game
+            unregister_game(channel.id)
             return await channel.send(content=content, file=file)
 
         curr_p = game.get_current_player()
@@ -218,9 +222,14 @@ class BasraCog(commands.Cog):
         """بدء لعبة بصرة جديدة"""
         if ctx.channel.id in active_basra_games:
             return await ctx.send("❌ يوجد بالفعل طاولة بصرة نشطة في هذا الروم!")
+        # التحقق من عدم وجود لعبة أخرى من نوع مختلف
+        from bot import has_active_game, get_active_game, register_game
+        if has_active_game(ctx.channel.id):
+            return await ctx.send(f"❌ يوجد لعبة **{get_active_game(ctx.channel.id)}** تعمل في هذا الروم بالفعل!")
 
         game = BasraGame(ctx.channel.id, target_score=121)
         active_basra_games[ctx.channel.id] = game
+        register_game(ctx.channel.id, "basra")
 
         # Add host as Player 1
         game.add_player(ctx.author.id, ctx.author.display_name)

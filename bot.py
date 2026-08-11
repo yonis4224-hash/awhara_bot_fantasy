@@ -261,6 +261,25 @@ from tarneeb_cog import TarneebCog
 from bank_cog import BankCog
 from basra_cog import BasraCog
 
+# سجل مركزي لجميع الألعاب النشطة (channel_id -> game_type)
+active_all_games = {}
+
+def register_game(channel_id, game_type):
+    """تسجيل لعبة جديدة في القناة"""
+    active_all_games[channel_id] = game_type
+
+def unregister_game(channel_id):
+    """إلغاء تسجيل لعبة من القناة"""
+    active_all_games.pop(channel_id, None)
+
+def get_active_game(channel_id):
+    """الحصول على نوع اللعبة النشطة في القناة"""
+    return active_all_games.get(channel_id)
+
+def has_active_game(channel_id):
+    """التحقق من وجود لعبة نشطة في القناة"""
+    return channel_id in active_all_games
+
 async def setup_hook():
     await bot.add_cog(TarneebCog(bot))
     log.info("✅ تم تحميل إضافة لعبة الطرنيب (TarneebCog) بنجاح!")
@@ -677,9 +696,12 @@ async def roulette_cmd(ctx):
             del active_roulettes[gid]
         else:
             return await ctx.send("❌ يوجد جولة تعمل الان بالفعل")
+    if has_active_game(gid):
+        return await ctx.send(f"❌ يوجد لعبة **{get_active_game(gid)}** تعمل في هذا الروم بالفعل!")
     game_id = int(time.time() * 1000)
     g = {"id": game_id, "players": [], "btns": {}, "created_at": time.time()}
     active_roulettes[gid] = g
+    register_game(gid, "roulette")
 
     e = discord.Embed(title="روليت", color=0xE4F000,
                       description=f"__**اللاعبين:**__\n{roulette_players_text([])}")
@@ -738,6 +760,7 @@ async def roulette_cmd(ctx):
     finally:
         # ضمان تنظيف حالة اللعبة حتى لو حدث خطأ
         active_roulettes.pop(gid, None)
+        unregister_game(gid)
 
 
 @bot.command(name="توقف", aliases=["stop"])
@@ -748,7 +771,34 @@ async def stop_cmd(ctx):
     if gid not in active_roulettes:
         return await ctx.send("❌ لا توجد لعبة قيد التشغيل في الوقت الحالي")
     del active_roulettes[gid]
+    unregister_game(gid)
     await ctx.send(f"❌ | تم طلب إيقاف لعبة روليت من قبل <@{ctx.author.id}>")
+
+
+@bot.command(name="انهاء", aliases=["end", "إنهاء", "stop_all", "توقف_الكل"])
+async def end_any_game(ctx):
+    """إنهاء أي لعبة نشطة في هذا الروم"""
+    cid = ctx.channel.id
+    game_type = get_active_game(cid)
+    
+    if not game_type:
+        return await ctx.send("❌ لا توجد لعبة قيد التشغيل في هذا الروم!")
+    
+    # إنهاء اللعبة حسب نوعها
+    if game_type == "roulette":
+        active_roulettes.pop(cid, None)
+    elif game_type == "basra":
+        from basra_cog import active_basra_games
+        active_basra_games.pop(cid, None)
+    elif game_type == "bank":
+        from bank_cog import active_bank_games
+        active_bank_games.pop(cid, None)
+    elif game_type == "tarneeb":
+        from tarneeb_cog import active_games as active_tarneeb
+        active_tarneeb.pop(cid, None)
+    
+    unregister_game(cid)
+    await ctx.send(f"✅ تم إنهاء لعبة **{game_type}** في هذا الروم بواسطة <@{ctx.author.id}>!")
 
 
 async def run_game(ctx, gid):

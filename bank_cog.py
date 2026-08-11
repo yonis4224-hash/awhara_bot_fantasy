@@ -57,6 +57,8 @@ class BankLobbyView(View):
 
         if interaction.channel.id in active_bank_games:
             del active_bank_games[interaction.channel.id]
+        from bot import unregister_game
+        unregister_game(interaction.channel.id)
         await interaction.response.edit_message(content="❌ **تم إلغاء بنك الحظ.**", embed=None, view=None)
 
 
@@ -187,6 +189,8 @@ class BankCog(commands.Cog):
             content = f"👑 **انتهت اللعبة!**\n{game.log_msg}"
             if channel.id in active_bank_games:
                 del active_bank_games[channel.id]
+            from bot import unregister_game
+            unregister_game(channel.id)
             return await channel.send(content=content, file=file)
 
         curr_p = game.get_current_player()
@@ -210,9 +214,14 @@ class BankCog(commands.Cog):
         """بدء لعبة بنك الحظ جديدة"""
         if ctx.channel.id in active_bank_games:
             return await ctx.send("❌ يوجد بالفعل لعبة بنك الحظ نشطة في هذا الروم!")
+        # التحقق من عدم وجود لعبة أخرى من نوع مختلف
+        from bot import has_active_game, get_active_game, register_game
+        if has_active_game(ctx.channel.id):
+            return await ctx.send(f"❌ يوجد لعبة **{get_active_game(ctx.channel.id)}** تعمل في هذا الروم بالفعل!")
 
         game = BankGame(ctx.channel.id)
         active_bank_games[ctx.channel.id] = game
+        register_game(ctx.channel.id, "bank")
 
         # Add host as Player 1
         game.add_player(ctx.author.id, ctx.author.display_name)

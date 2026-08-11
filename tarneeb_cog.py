@@ -210,6 +210,8 @@ class TarneebLobbyView(View):
 
         if interaction.channel.id in active_games:
             del active_games[interaction.channel.id]
+        from bot import unregister_game
+        unregister_game(interaction.channel.id)
         await interaction.response.edit_message(content="❌ **تم إلغاء طاولة الطرنيب.**", embed=None, view=None)
 
 
@@ -286,6 +288,8 @@ class TarneebCog(commands.Cog):
             view = None
             if channel.id in active_games:
                 del active_games[channel.id]
+            from bot import unregister_game
+            unregister_game(channel.id)
             return await channel.send(content=desc, file=file)
         else:
             desc = "طاولة الطرنيب"
@@ -331,9 +335,14 @@ class TarneebCog(commands.Cog):
 
         if ctx.channel.id in active_games:
             return await ctx.send("❌ يوجد بالفعل طاولة طرنيب نشطة في هذا الروم!")
+        # التحقق من عدم وجود لعبة أخرى من نوع مختلف
+        from bot import has_active_game, get_active_game, register_game
+        if has_active_game(ctx.channel.id):
+            return await ctx.send(f"❌ يوجد لعبة **{get_active_game(ctx.channel.id)}** تعمل في هذا الروم بالفعل!")
 
         game = TarneebGame(ctx.channel.id)
         active_games[ctx.channel.id] = game
+        register_game(ctx.channel.id, "tarneeb")
 
         # Add host as Player 1
         game.add_player(ctx.author.id, ctx.author.display_name)
@@ -342,7 +351,7 @@ class TarneebCog(commands.Cog):
         view = TarneebLobbyView(ctx.author, game, self)
         await ctx.send(embed=embed, view=view)
 
-    @commands.command(name="_انهاء", aliases=["انهاء_الطرنيب", "انهاء", "stop_tarneeb"])
+    @commands.command(name="_انهاء", aliases=["انهاء_الطرنيب", "stop_tarneeb"])
     async def cmd_end_tarneeb(self, ctx):
         """إنهاء لعبة الطرنيب الحالية بواسطة الأدمن"""
         if not ctx.author.guild_permissions.manage_events and not ctx.author.guild_permissions.administrator:
@@ -350,6 +359,8 @@ class TarneebCog(commands.Cog):
 
         if ctx.channel.id in active_games:
             del active_games[ctx.channel.id]
+            from bot import unregister_game
+            unregister_game(ctx.channel.id)
             await ctx.send("⏹️ **تم إنهاء لعبة الطرنيب في هذا الروم بنجاح بواسطة الأدمن.**")
         else:
             await ctx.send("❌ لا توجد لعبة طرنيب نشطة حالياً في هذا الروم!")
