@@ -97,6 +97,17 @@ class BasraGameMainView(View):
             msg += f"\n⚡ مكافأة التعادل المعلقة: {self.game.tie_bonus} نقطة"
         await interaction.response.send_message(msg, ephemeral=True)
 
+    @discord.ui.button(label="🚪 مغادرة", style=discord.ButtonStyle.danger, custom_id="basra_leave")
+    async def leave_btn(self, interaction: discord.Interaction, button: Button):
+        success, msg = self.game.replace_with_ai(interaction.user.id)
+        if not success:
+            return await interaction.response.send_message(msg, ephemeral=True)
+
+        button.disabled = True
+        await interaction.response.edit_message(view=self)
+        await self.cog.update_table(interaction.channel, self.game)
+        await interaction.followup.send(f"✅ {msg}", ephemeral=True)
+
 
 class BasraLobbyView(View):
     def __init__(self, host_user, game, cog):

@@ -111,9 +111,11 @@ class TarneebGame:
             return True, f"غادر **{target.name}** الطاولة."
         else:
             # Replace player with AI during active game
+            old_name = target.name
             target.is_ai = True
-            target.name = f"بوت (بديل {target.name[:8]})"
-            return True, f"انسحب **{target.name}** وتم استبداله بـ AI لإكمال الجولة!"
+            target.name = f"بوت (بديل {old_name[:8]})"
+            target.user_id = f"AI_TARNEEB_LEAVE_{random.randint(100,999)}"
+            return True, f"🚪 غادر **{old_name}** وتم استبداله بـ AI لإكمال الجولة!"
 
     def fill_with_ai(self):
         ai_count = 1

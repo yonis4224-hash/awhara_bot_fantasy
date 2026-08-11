@@ -106,6 +106,29 @@ class BankGame:
             self.players.append(p)
             ai_count += 1
 
+    def replace_with_ai(self, user_id):
+        """تسجيل مغادرة لاعب أثناء اللعب واستبداله ببوت AI (يحافظ على مقعده وماله وعقاراته)"""
+        uid = str(user_id)
+        target = next((p for p in self.players if p.user_id == uid), None)
+        if not target:
+            return False, "أنت لست لاعباً في هذه الطاولة!"
+        if target.is_ai:
+            return False, "هذا المقعد بوت بالفعل!"
+
+        old_name = target.name
+        was_current = self.get_current_player() is target
+        target.is_ai = True
+        target.name = f"بوت (بديل {old_name[:8]})"
+        target.user_id = f"AI_BANK_LEAVE_{random.randint(100, 999)}"
+
+        msg = f"🚪 غادر **{old_name}** وتم استبداله بـ AI لمواصلة اللعب!"
+        # If the leaving player was mid-turn and bankrupt, advance to the next active player
+        if was_current and target.bankrupt:
+            self.end_turn()
+        if self.state == 'PLAYING':
+            self.log_msg = msg
+        return True, msg
+
     def start_game(self):
         if len(self.players) < 2:
             self.fill_with_ai()

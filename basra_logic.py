@@ -110,6 +110,22 @@ class BasraGame:
             p = BasraPlayer(f"AI_BASRA_{seat}_{random.randint(100,999)}", "الذكاء الاصطناعي 🤖", seat, is_ai=True)
             self.players.append(p)
 
+    def replace_with_ai(self, user_id):
+        """تسجيل مغادرة لاعب أثناء اللعب واستبداله ببوت AI (يحافظ على مقعده وأوراقه ونقاطه)"""
+        uid = str(user_id)
+        target = next((p for p in self.players if p.user_id == uid), None)
+        if not target:
+            return False, "أنت لست لاعباً في هذه الطاولة!"
+        if target.is_ai:
+            return False, "هذا المقعد بوت بالفعل!"
+
+        old_name = target.name
+        target.is_ai = True
+        target.name = f"بوت (بديل {old_name[:8]})"
+        target.user_id = f"AI_BASRA_LEAVE_{random.randint(100, 999)}"
+        self.log_msg = f"🚪 غادر **{old_name}** وتم استبداله بـ AI لمواصلة اللعب!"
+        return True, self.log_msg
+
     def start_game(self):
         if len(self.players) < NUM_PLAYERS:
             self.fill_with_ai()

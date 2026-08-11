@@ -139,6 +139,40 @@ class BankTurnView(View):
         await interaction.response.defer()
         await self.cog.update_board(interaction.channel, self.game)
 
+    @discord.ui.button(label="🚪 مغادرة", style=discord.ButtonStyle.danger, custom_id="bank_leave")
+    async def leave_btn(self, interaction: discord.Interaction, button: Button):
+        success, msg = self.game.replace_with_ai(interaction.user.id)
+        if not success:
+            return await interaction.response.send_message(msg, ephemeral=True)
+
+        button.disabled = True
+        await interaction.response.edit_message(view=self)
+        await self.cog.update_board(interaction.channel, self.game)
+        await interaction.followup.send(f"✅ {msg}", ephemeral=True)
+
+
+class BankMainView(View):
+    def __init__(self, game, cog):
+        super().__init__(timeout=None)
+        self.game = game
+        self.cog = cog
+
+    @discord.ui.button(label="🔄 تحديث الرقعة", style=discord.ButtonStyle.secondary, custom_id="bank_refresh")
+    async def refresh_btn(self, interaction: discord.Interaction, button: Button):
+        await interaction.response.defer()
+        await self.cog.update_board(interaction.channel, self.game)
+
+    @discord.ui.button(label="🚪 مغادرة", style=discord.ButtonStyle.danger, custom_id="bank_leave")
+    async def leave_btn(self, interaction: discord.Interaction, button: Button):
+        success, msg = self.game.replace_with_ai(interaction.user.id)
+        if not success:
+            return await interaction.response.send_message(msg, ephemeral=True)
+
+        button.disabled = True
+        await interaction.response.edit_message(view=self)
+        await self.cog.update_board(interaction.channel, self.game)
+        await interaction.followup.send(f"✅ {msg}", ephemeral=True)
+
 
 class BankCog(commands.Cog):
     def __init__(self, bot):
@@ -196,7 +230,7 @@ class BankCog(commands.Cog):
         curr_p = game.get_current_player()
         mention = f"<@{curr_p.user_id}>" if not curr_p.is_ai else f"🤖 **{curr_p.name}**"
         content = f"🏰 **بنك الحظ** | الدور الآن على: {mention}\n📢 {game.log_msg}"
-        view = BankTurnView(game, self) if not curr_p.is_ai else None
+        view = BankTurnView(game, self) if not curr_p.is_ai else BankMainView(game, self)
 
         await channel.send(content=content, file=file, view=view)
 

@@ -90,6 +90,17 @@ class TarneebGameMainView(View):
         await interaction.response.defer()
         await self.cog.update_game_table(interaction.channel, self.game)
 
+    @discord.ui.button(label="🚪 مغادرة", style=discord.ButtonStyle.danger, custom_id="tarneeb_leave")
+    async def leave_btn(self, interaction: discord.Interaction, button: Button):
+        success, msg = self.game.remove_player(interaction.user.id)
+        if not success:
+            return await interaction.response.send_message(msg, ephemeral=True)
+
+        button.disabled = True
+        await interaction.response.edit_message(view=self)
+        await self.cog.update_game_table(interaction.channel, self.game)
+        await interaction.followup.send(f"✅ {msg}", ephemeral=True)
+
 
 class TarneebBiddingView(View):
     def __init__(self, game, cog):
@@ -120,6 +131,17 @@ class TarneebBiddingView(View):
             await interaction.response.send_message(f"✅ {msg}")
             await self.cog.update_game_table(interaction.channel, self.game)
         return callback
+
+    @discord.ui.button(label="🚪 مغادرة", style=discord.ButtonStyle.danger, custom_id="tarneeb_leave")
+    async def leave_btn(self, interaction: discord.Interaction, button: Button):
+        success, msg = self.game.remove_player(interaction.user.id)
+        if not success:
+            return await interaction.response.send_message(msg, ephemeral=True)
+
+        button.disabled = True
+        await interaction.response.edit_message(view=self)
+        await self.cog.update_game_table(interaction.channel, self.game)
+        await interaction.followup.send(f"✅ {msg}", ephemeral=True)
 
 
 class TarneebTrumpSelectView(View):
@@ -155,6 +177,17 @@ class TarneebTrumpSelectView(View):
 
         await interaction.response.send_message(f"✅ {msg}")
         await self.cog.update_game_table(interaction.channel, self.game)
+
+    @discord.ui.button(label="🚪 مغادرة", style=discord.ButtonStyle.danger, custom_id="tarneeb_leave")
+    async def leave_btn(self, interaction: discord.Interaction, button: Button):
+        success, msg = self.game.remove_player(interaction.user.id)
+        if not success:
+            return await interaction.response.send_message(msg, ephemeral=True)
+
+        button.disabled = True
+        await interaction.response.edit_message(view=self)
+        await self.cog.update_game_table(interaction.channel, self.game)
+        await interaction.followup.send(f"✅ {msg}", ephemeral=True)
 
 
 class TarneebLobbyView(View):
