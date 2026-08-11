@@ -8,6 +8,7 @@ SUIT_NAMES_AR = {'H': 'كوبا ♥', 'D': 'ديناري ♦', 'S': '♠ سبي�
 RANK_NAMES_AR = {14: 'A', 13: 'K', 12: 'Q', 11: 'J', 10: '10', 9: '9', 8: '8', 7: '7', 6: '6', 5: '5', 4: '4', 3: '3', 2: '2'}
 
 NUM_PLAYERS = 4  # عدد اللاعبين في طاولة الشكوبا
+BASRA_VALUES = {1, 5, 6, 7, 8, 9, 10}  # قيم الكروت التي تحقق البصرة (5 إلى 10 + الرقم 1)
 
 
 class BasraCard:
@@ -45,7 +46,8 @@ class BasraCard:
 
 class BasraDeck:
     def __init__(self):
-        self.cards = [BasraCard(s, r) for s in ['H', 'D', 'S', 'C'] for r in range(2, 15)]
+        # Deck WITHOUT Q (12) and K (13): ranks A(14), 2..10, J(11)
+        self.cards = [BasraCard(s, r) for s in ['H', 'D', 'S', 'C'] for r in [14, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]]
 
     def shuffle(self):
         random.shuffle(self.cards)
@@ -119,14 +121,14 @@ class BasraGame:
         self.deck = BasraDeck()
         self.deck.shuffle()
 
-        # Initial Deal: 4 to each player, 4 to Ground
+        # Initial Deal: 4 to each player, NO cards on the table
         for p in self.players:
             p.hand = self.deck.draw(4)
             p.captured = []
             p.basra_count = 0
-        self.ground = self.deck.draw(4)
+        self.ground = []
         self.last_eater = None
-        self.log_msg = f"بدأت اللعبة! تم توزيع الكروت والأرض. دور **{self.players[0].name}**."
+        self.log_msg = f"بدأت اللعبة! تم توزيع الكروت. دور **{self.players[0].name}**."
 
     def get_current_player(self):
         return self.players[self.turn_index]
@@ -193,8 +195,9 @@ class BasraGame:
         is_basra = False
 
         if eaten_list:
-            # Basra check: if eaten_list clears all cards from ground
-            if len(eaten_list) == len(self.ground):
+            # Basra: the card clears the ENTIRE table AND its value is in BASRA_VALUES {1,5-10}
+            # (e.g. throwing 9 on 4+5 = basra, but throwing 4 on a 4 is NOT basra)
+            if len(eaten_list) == len(self.ground) and played_card.value in BASRA_VALUES:
                 is_basra = True
 
         return eaten_list, is_basra
@@ -234,9 +237,10 @@ class BasraGame:
         # Check if all hands are empty and need redeal
         if all(not p.hand for p in self.players):
             if self.deck.cards:
+                per = min(4, len(self.deck.cards) // len(self.players))
                 for p in self.players:
-                    p.hand = self.deck.draw(4)
-                msg += " (تم توزيع 4 كروت جديدة لكل لاعب)"
+                    p.hand = self.deck.draw(per)
+                msg += f" (تم توزيع {per} كروت جديدة لكل لاعب)"
             else:
                 # End of Game Round! Calculate Final Scores
                 return self.end_game_scoring()
@@ -252,12 +256,12 @@ class BasraGame:
         self.deck = BasraDeck()
         self.deck.shuffle()
 
-        # Deal: 4 to each player, 4 to Ground
+        # Deal: 4 to each player, NO cards on the table
         for p in self.players:
             p.hand = self.deck.draw(4)
             p.captured = []
             p.basra_count = 0
-        self.ground = self.deck.draw(4)
+        self.ground = []
         self.last_eater = None
         self.round_number += 1
         self.state = 'PLAYING'
