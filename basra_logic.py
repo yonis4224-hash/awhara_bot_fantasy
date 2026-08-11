@@ -1,11 +1,12 @@
 """
-Basra Card Game Engine (basra_logic.py)
-Handles 52-card deck, matching logic (rank/sum match, Jack/7-Diamonds sweep), Basra detection, card scoring, and AI bot.
+Basra Card Game Engine (basra_logic.py) - القواعد الجديدة
+Handles 52-card deck, matching logic, Basra detection, card scoring, and AI bot.
 """
 import random
 
 SUIT_NAMES_AR = {'H': 'كوبا ♥', 'D': 'ديناري ♦', 'S': '♠ سبيد', 'C': '♣ شيريا'}
 RANK_NAMES_AR = {14: 'A', 13: 'K', 12: 'Q', 11: 'J', 10: '10', 9: '9', 8: '8', 7: '7', 6: '6', 5: '5', 4: '4', 3: '3', 2: '2'}
+
 
 class BasraCard:
     def __init__(self, suit, rank):
@@ -14,12 +15,17 @@ class BasraCard:
 
     @property
     def value(self):
-        # Numeric value for sum combinations
-        if self.rank == 14: # Ace
+        """Numeric value for sum combinations. Q, K, J have no value."""
+        if self.rank == 14:  # Ace
             return 1
         elif 2 <= self.rank <= 10:
             return self.rank
         return 0  # J, Q, K have no sum value
+
+    @property
+    def is_face(self):
+        """Q, K, J are face cards with no numeric value."""
+        return self.rank >= 11
 
     @property
     def code(self):
@@ -54,7 +60,7 @@ class BasraPlayer:
         self.name = name
         self.seat_idx = seat_idx
         self.is_ai = is_ai
-        
+
         self.hand = []
         self.captured = []
         self.score = 0
@@ -69,17 +75,19 @@ class BasraPlayer:
 
 
 class BasraGame:
-    def __init__(self, channel_id, target_score=101):
+    def __init__(self, channel_id, target_score=121):
         self.channel_id = channel_id
         self.target_score = target_score
         self.state = 'LOBBY'   # 'LOBBY', 'PLAYING', 'GAME_OVER'
-        
+
         self.players = []
         self.turn_index = 0
         self.ground = []
         self.deck = BasraDeck()
         self.last_eater = None
         self.log_msg = "بدأت لعبة البصرة!"
+        self.tie_bonus = 0  # مكافأة التعادل (30 أو 60)
+        self.round_number = 1
 
     def add_player(self, user_id, name):
         if len(self.players) >= 2:
@@ -101,12 +109,12 @@ class BasraGame:
     def start_game(self):
         if len(self.players) < 2:
             self.fill_with_ai()
-            
+
         self.state = 'PLAYING'
         self.turn_index = 0
         self.deck = BasraDeck()
         self.deck.shuffle()
-        
+
         # Initial Deal: 4 to P1, 4 to P2, 4 to Ground
         self.players[0].hand = self.deck.draw(4)
         self.players[1].hand = self.deck.draw(4)
@@ -128,16 +136,19 @@ class BasraGame:
         if played_card.rank == 11 or (played_card.suit == 'D' and played_card.rank == 7):
             if not self.ground:
                 return [], False
-            
+
             is_basra = False
             # Check Basra condition:
             # - Jack on a single Jack on ground = Basra
-            # - Non-Jack (7-Diamonds) on ground = Basra
+            # - 7-Diamonds: Basra only if ground sum <= 10 and no Q/K on ground
             if played_card.rank == 11:
                 if len(self.ground) == 1 and self.ground[0].rank == 11:
                     is_basra = True
             else:  # 7 of Diamonds
-                is_basra = True
+                ground_sum = sum(c.value for c in self.ground)
+                has_face = any(c.rank in (12, 13) for c in self.ground)  # Q or K
+                if ground_sum <= 10 and not has_face:
+                    is_basra = True
 
             return list(self.ground), is_basra
 
@@ -146,7 +157,7 @@ class BasraGame:
             return [], False
 
         eaten = set()
-        
+
         # Rank match: any card on ground with same rank
         for gc in self.ground:
             if gc.rank == played_card.rank:
@@ -203,7 +214,7 @@ class BasraGame:
             player.captured.extend(eaten)
             player.captured.append(card)
             self.last_eater = seat_idx
-            
+
             # Remove eaten cards from ground
             self.ground = [gc for gc in self.ground if gc not in eaten]
 
@@ -241,33 +252,69 @@ class BasraGame:
             self.ground = []
 
         p1, p2 = self.players[0], self.players[1]
-        
-        # 1. Majority Cards (+3 pts)
-        if len(p1.captured) > len(p2.captured):
-            p1.score += 3
-        elif len(p2.captured) > len(p1.captured):
-            p2.score += 3
+
+        p1_count = len(p1.captured)
+        p2_count = len(p2.captured)
+
+        # Check for tie (26-26)
+        if p1_count == 26 and p2_count == 26:
+            self.tie_bonus += 30
+            self.state = 'GAME_OVER'
+            msg = f"🏁 **انتهت الجولة بتعادل (26-26)!** لا نقاط هذه الجولة.\n"
+            msg += f"• **{p1.name}**: 26 كرت | **{p2.name}**: 26 كرت\n"
+            msg += f"🎯 مكافأة التعادل للجولة القادمة: **{self.tie_bonus}** نقطة إضافية!"
+            self.log_msg = msg
+            return True, msg
+
+        # 1. Majority Cards (27+ cards = 30 points)
+        if p1_count >= 27:
+            p1.score += 30
+        elif p2_count >= 27:
+            p2.score += 30
 
         # 2. Special Card Points
         for p in (p1, p2):
             for c in p.captured:
-                if c.rank == 14: # Ace
+                if c.rank == 14:  # Ace
                     p.score += 1
-                elif c.suit == 'C' and c.rank == 2: # 2 of Clubs
+                elif c.rank == 11:  # Jack
+                    p.score += 1
+                elif c.suit == 'C' and c.rank == 2:  # 2 of Clubs (السّنكة)
                     p.score += 2
-                elif c.suit == 'D' and c.rank == 10: # 10 of Diamonds
+                elif c.suit == 'D' and c.rank == 10:  # 10 of Diamonds
                     p.score += 3
 
-        self.state = 'GAME_OVER'
-        winner = p1 if p1.score > p2.score else (p2 if p2.score > p1.score else None)
-        if winner:
-            msg = f"🏁 **انتهت لعبة البصرة!**\n👑 **الفائز: {winner.name}** بمجموع **{winner.score}** نقطة!\n"
-        else:
-            msg = f"🏁 **انتهت لعبة البصرة بتعادل متعادل!** ({p1.score} - {p2.score})\n"
+        # Add tie bonus if any
+        if self.tie_bonus > 0:
+            if p1_count > p2_count:
+                p1.score += self.tie_bonus
+            elif p2_count > p1_count:
+                p2.score += self.tie_bonus
+            self.tie_bonus = 0
 
-        msg += f"• **{p1.name}**: {p1.score} نقطة (جمع {len(p1.captured)} كرت | بصريات: {p1.basra_count})\n"
-        msg += f"• **{p2.name}**: {p2.score} نقطة (جمع {len(p2.captured)} كرت | بصريات: {p2.basra_count})"
-        
+        self.state = 'GAME_OVER'
+
+        # Check if game is over (reached target score)
+        game_over = False
+        winner = None
+        if p1.score >= self.target_score:
+            game_over = True
+            winner = p1
+        elif p2.score >= self.target_score:
+            game_over = True
+            winner = p2
+
+        if game_over and winner:
+            msg = f"🏆 **انتهت لعبة البصرة!**\n👑 **الفائز: {winner.name}** بمجموع **{winner.score}** نقطة!\n"
+        else:
+            msg = f"🏁 **انتهت الجولة {self.round_number}!**\n"
+
+        msg += f"• **{p1.name}**: {p1.score} نقطة (جمع {p1_count} كرت | بصريات: {p1.basra_count})\n"
+        msg += f"• **{p2.name}**: {p2.score} نقطة (جمع {p2_count} كرت | بصريات: {p2.basra_count})"
+
+        if not game_over:
+            msg += f"\n🎯 الهدف: {self.target_score} نقطة"
+
         self.log_msg = msg
         return True, msg
 
@@ -285,7 +332,7 @@ class BasraGame:
             score = len(eaten) * 2
             if is_basra:
                 score += 50
-            if card.rank == 11 or (card.suit == 'D' and card.rank == 7): # Hold Jack/7D if ground empty
+            if card.rank == 11 or (card.suit == 'D' and card.rank == 7):  # Hold Jack/7D if ground empty
                 if not self.ground:
                     score = -10
             if score > best_score:

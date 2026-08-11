@@ -87,6 +87,19 @@ class BasraGameMainView(View):
         await interaction.response.defer()
         await self.cog.update_table(interaction.channel, self.game)
 
+    @discord.ui.button(label="📊 النقاط", style=discord.ButtonStyle.primary, custom_id="basra_scores")
+    async def scores_btn(self, interaction: discord.Interaction, button: Button):
+        p1, p2 = self.game.players[0], self.game.players[1]
+        msg = (
+            f"📊 **النقاط الحالية:**\n"
+            f"• **{p1.name}**: {p1.score} نقطة | كروت مجمعة: {len(p1.captured)} | بصريات: {p1.basra_count}\n"
+            f"• **{p2.name}**: {p2.score} نقطة | كروت مجمعة: {len(p2.captured)} | بصريات: {p2.basra_count}\n"
+            f"🎯 الهدف: {self.game.target_score} نقطة"
+        )
+        if self.game.tie_bonus > 0:
+            msg += f"\n⚡ مكافأة التعادل المعلقة: {self.game.tie_bonus} نقطة"
+        await interaction.response.send_message(msg, ephemeral=True)
+
 
 class BasraLobbyView(View):
     def __init__(self, host_user, game, cog):
@@ -206,7 +219,7 @@ class BasraCog(commands.Cog):
         if ctx.channel.id in active_basra_games:
             return await ctx.send("❌ يوجد بالفعل طاولة بصرة نشطة في هذا الروم!")
 
-        game = BasraGame(ctx.channel.id)
+        game = BasraGame(ctx.channel.id, target_score=121)
         active_basra_games[ctx.channel.id] = game
 
         # Add host as Player 1
