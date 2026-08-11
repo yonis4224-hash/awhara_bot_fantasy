@@ -8,7 +8,7 @@ import time
 from roulette_gif import make_gif, download_avatar
 from roulette_shop import (
     RouletteShopView, get_user_data, add_points, get_points,
-    buy_item, has_item, use_item, ITEMS
+    buy_item, has_item, use_item, ITEMS, record_kick, record_win
 )
 
 import discord
@@ -258,10 +258,16 @@ class CatView(View):
 # أحداث البوت وإضافات الألعاب
 # ------------------------------------------------------------------------------
 from tarneeb_cog import TarneebCog
+from bank_cog import BankCog
+from basra_cog import BasraCog
 
 async def setup_hook():
     await bot.add_cog(TarneebCog(bot))
     log.info("✅ تم تحميل إضافة لعبة الطرنيب (TarneebCog) بنجاح!")
+    await bot.add_cog(BankCog(bot))
+    log.info("✅ تم تحميل إضافة لعبة بنك الحظ (BankCog) بنجاح!")
+    await bot.add_cog(BasraCog(bot))
+    log.info("✅ تم تحميل إضافة لعبة البصرة (BasraCog) بنجاح!")
 
 bot.setup_hook = setup_hook
 
@@ -617,13 +623,17 @@ async def shop_cmd(ctx):
     await ctx.send(embed=embed, view=view)
 
 
-@bot.command(name="نقاطي", aliases=["points", "النقاط"])
+@bot.command(name="نقاطي", aliases=["points", "النقاط", "تاريخي", "سجلي"])
 async def points_cmd(ctx):
-    """عرض نقاطك ومخزون الخواص لديك"""
+    """عرض نقاطك ومخزون الخواص والتاريخ الدائم لديك"""
     u = get_user_data(ctx.author.id)
     pts = u.get("points", 0)
+    total_pts = u.get("total_points_earned", pts)
+    wins = u.get("total_wins", 0)
+    kicks = u.get("total_kicks", 0)
     inv = u.get("inventory", {})
-    text = (f"💰 **رصيد النقاط الخاص بك يا <@{ctx.author.id}>:** `{pts}` نقطة\n\n"
+    text = (f"💰 **رصيد النقاط الجاري:** `{pts}` نقطة | 📜 **إجمالي التاريخ:** `{total_pts}` نقطة\n"
+            f"🏆 **الانتصارات الكلية:** `{wins}` | 🎯 **حالات الطرد:** `{kicks}`\n\n"
             f"📦 **الخواص بالمخزون:**\n"
             f"• درع ضد الطرد 🛡️: `{inv.get('shield', 0)}`\n"
             f"• طرد ثنائي ⚡: `{inv.get('double_kick', 0)}`\n"
@@ -737,7 +747,7 @@ async def run_game(ctx, gid):
     await ctx.send(content=content, file=discord.File(img_file, filename="roulette.png"))
 
     if len(players) <= 2:
-        winner_pts = add_points(winner["id"], 3)
+        winner_pts = record_win(winner["id"])
         await ctx.send(f":crown: - **فاز <@{winner['id']}> في اللعبة وحصل على 3 نقاط! 🎉 (إجمالي نقاطه: {winner_pts})**")
         del active_roulettes[gid]
         return
@@ -773,7 +783,7 @@ async def run_game(ctx, gid):
 
             # Check Target for Reverse Kick
             if use_item(victim["id"], "reverse_kick"):
-                v_pts = add_points(victim["id"], 1)
+                v_pts = record_kick(victim["id"])
                 await ctx.send(f"🔄 **طرد عكسي!** حاول <@{winner['id']}> طرد <@{victim['id']}>، لكن <@{victim['id']}> يمتلك خاصية **الطرد العكسي 🔄**!\n"
                                f"انعكست الضربة وطُرد المعتدي <@{winner['id']}> من اللعبة! وحصل <@{victim['id']}> على **+1 نقطة** 🎯 (نقاطه: {v_pts})")
                 g["players"] = [p for p in g["players"] if p["id"] != winner["id"]]
@@ -786,7 +796,7 @@ async def run_game(ctx, gid):
                 return await run_game(ctx, gid)
 
             else:
-                kicker_pts = add_points(winner["id"], 1)
+                kicker_pts = record_kick(winner["id"])
                 await ctx.send(f"💣 | تم طرد <@{victim['id']}> من اللعبة وحصل <@{winner['id']}> على **+1 نقطة** 🎯 (نقاطه: {kicker_pts}) ، سيتم بدء الجولة القادمة في بضع ثواني...")
                 g["players"] = [p for p in g["players"] if p["id"] != victim["id"]]
                 return await run_game(ctx, gid)

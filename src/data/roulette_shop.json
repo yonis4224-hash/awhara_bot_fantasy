@@ -3,7 +3,7 @@
     "points": 41,
     "inventory": {
       "shield": 0,
-      "double_kick": 2,
+      "double_kick": 3,
       "reverse_kick": 0
     }
   },
@@ -14,5 +14,12 @@
       "double_kick": 0,
       "reverse_kick": 0
     }
+  },
+  "777111222": {
+    "points": 8,
+    "total_points_earned": 8,
+    "total_wins": 2,
+    "total_kicks": 2,
+    "inventory": {}
   }
 }

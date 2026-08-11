@@ -1,6 +1,6 @@
 """
 Roulette Shop & Points Engine (roulette_shop.py)
-Handles points persistence, items purchasing, inventory management, and Discord Shop View.
+Handles points persistence, historical ledger, items purchasing, inventory management, and Discord Shop View.
 """
 import os
 import json
@@ -51,6 +51,9 @@ def get_user_data(user_id):
     if uid not in data:
         data[uid] = {
             "points": 0,
+            "total_points_earned": 0,
+            "total_wins": 0,
+            "total_kicks": 0,
             "inventory": {
                 "shield": 0,
                 "double_kick": 0,
@@ -58,12 +61,16 @@ def get_user_data(user_id):
             }
         }
         save_data(data)
-    # Ensure all items exist in user inventory
-    user_inv = data[uid].setdefault("inventory", {})
+    
+    u = data[uid]
+    u.setdefault("total_points_earned", u.get("points", 0))
+    u.setdefault("total_wins", 0)
+    u.setdefault("total_kicks", 0)
+    user_inv = u.setdefault("inventory", {})
     for k in ITEMS:
         if k not in user_inv:
             user_inv[k] = 0
-    return data[uid]
+    return u
 
 def add_points(user_id, amount):
     uid = str(user_id)
@@ -71,11 +78,34 @@ def add_points(user_id, amount):
     if uid not in data:
         data[uid] = {
             "points": 0,
+            "total_points_earned": 0,
+            "total_wins": 0,
+            "total_kicks": 0,
             "inventory": {"shield": 0, "double_kick": 0, "reverse_kick": 0}
         }
-    data[uid]["points"] = max(0, data[uid].get("points", 0) + amount)
+    
+    u = data[uid]
+    u["points"] = max(0, u.get("points", 0) + amount)
+    if amount > 0:
+        u["total_points_earned"] = u.get("total_points_earned", 0) + amount
     save_data(data)
-    return data[uid]["points"]
+    return u["points"]
+
+def record_kick(user_id):
+    uid = str(user_id)
+    data = load_data()
+    u = data.setdefault(uid, {"points": 0, "total_points_earned": 0, "total_wins": 0, "total_kicks": 0, "inventory": {}})
+    u["total_kicks"] = u.get("total_kicks", 0) + 1
+    save_data(data)
+    return add_points(user_id, 1)
+
+def record_win(user_id):
+    uid = str(user_id)
+    data = load_data()
+    u = data.setdefault(uid, {"points": 0, "total_points_earned": 0, "total_wins": 0, "total_kicks": 0, "inventory": {}})
+    u["total_wins"] = u.get("total_wins", 0) + 1
+    save_data(data)
+    return add_points(user_id, 3)
 
 def get_points(user_id):
     u = get_user_data(user_id)
@@ -87,7 +117,7 @@ def buy_item(user_id, item_key):
 
     uid = str(user_id)
     data = load_data()
-    u = data.get(uid, {"points": 0, "inventory": {"shield": 0, "double_kick": 0, "reverse_kick": 0}})
+    u = data.get(uid, {"points": 0, "total_points_earned": 0, "total_wins": 0, "total_kicks": 0, "inventory": {}})
 
     price = ITEMS[item_key]["price"]
     if u.get("points", 0) < price:
@@ -124,11 +154,16 @@ class RouletteShopView(View):
     def build_embed(self):
         u = get_user_data(self.user.id)
         pts = u.get("points", 0)
+        total_pts = u.get("total_points_earned", pts)
+        wins = u.get("total_wins", 0)
+        kicks = u.get("total_kicks", 0)
         inv = u.get("inventory", {})
 
         embed = discord.Embed(
-            title="🏪 متجر خواص الروليت (Roulette Shop)",
-            description=f"مرحباً <@{self.user.id}>!\n💰 **رصيدك الحالي:** `{pts}` نقطة\n\n"
+            title="🏪 متجر وسجل خواص الروليت",
+            description=f"مرحباً <@{self.user.id}>!\n"
+                        f"💰 **رصيدك الجاري:** `{pts}` نقطة | 📜 **إجمالي التاريخ:** `{total_pts}` نقطة\n"
+                        f"🏆 **الانتصارات:** `{wins}` | 🎯 **الطرد الناجح:** `{kicks}`\n\n"
                         f"**طريقة كسب النقاط:**\n"
                         f"• طرد لاعب في الروليت = **+1 نقطة**\n"
                         f"• الفوز باللعبة = **+3 نقاط**\n",
@@ -139,7 +174,7 @@ class RouletteShopView(View):
             count = inv.get(key, 0)
             embed.add_field(
                 name=f"{item['name']} — 💵 السعر: {item['price']} نقطة",
-                value=f"{item['desc']}\n📦 **تكتلك حالياً:** `{count}`",
+                value=f"{item['desc']}\n📦 **تمتلك حالياً:** `{count}`",
                 inline=False
             )
 

@@ -83,6 +83,7 @@ class TarneebGame:
         self.turn_index = 0
         self.bidding_turn = 0
         self.last_round_msg = ""
+        self.turn_timer_task = None
 
     def add_player(self, user_id, name):
         if len(self.players) >= 4:
@@ -94,6 +95,25 @@ class TarneebGame:
         p = Player(user_id, name, seat, is_ai=False)
         self.players.append(p)
         return True, f"انضم **{name}** للطاولة (مقعد {seat + 1} - فريق {p.team})"
+
+    def remove_player(self, user_id):
+        uid = str(user_id)
+        target = next((p for p in self.players if p.user_id == uid), None)
+        if not target:
+            return False, "أنت لست منضماً للطاولة!"
+
+        if self.state == 'LOBBY':
+            self.players = [p for p in self.players if p.user_id != uid]
+            # Re-seat remaining players
+            for idx, p in enumerate(self.players):
+                p.seat = idx
+                p.team = 1 if idx in (0, 2) else 2
+            return True, f"غادر **{target.name}** الطاولة."
+        else:
+            # Replace player with AI during active game
+            target.is_ai = True
+            target.name = f"بوت (بديل {target.name[:8]})"
+            return True, f"انسحب **{target.name}** وتم استبداله بـ AI لإكمال الجولة!"
 
     def fill_with_ai(self):
         ai_count = 1

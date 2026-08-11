@@ -194,6 +194,15 @@ class TarneebLobbyView(View):
 
         await self.cog.update_game_table(interaction.channel, self.game)
 
+    @discord.ui.button(label="مغادرة 🚪", style=discord.ButtonStyle.secondary)
+    async def leave_btn(self, interaction: discord.Interaction, button: Button):
+        success, msg = self.game.remove_player(interaction.user.id)
+        if not success:
+            return await interaction.response.send_message(msg, ephemeral=True)
+
+        embed = self.cog.build_lobby_embed(self.game)
+        await interaction.response.edit_message(embed=embed, view=self)
+
     @discord.ui.button(label="إلغاء ❌", style=discord.ButtonStyle.danger)
     async def cancel_btn(self, interaction: discord.Interaction, button: Button):
         if str(interaction.user.id) != str(self.host_user.id):
@@ -332,6 +341,18 @@ class TarneebCog(commands.Cog):
         embed = self.build_lobby_embed(game)
         view = TarneebLobbyView(ctx.author, game, self)
         await ctx.send(embed=embed, view=view)
+
+    @commands.command(name="_انهاء", aliases=["انهاء_الطرنيب", "انهاء", "stop_tarneeb"])
+    async def cmd_end_tarneeb(self, ctx):
+        """إنهاء لعبة الطرنيب الحالية بواسطة الأدمن"""
+        if not ctx.author.guild_permissions.manage_events and not ctx.author.guild_permissions.administrator:
+            return await ctx.send("❌ فقط المسؤولين يمكنهم إلغاء أو إنهاء اللعبة!")
+
+        if ctx.channel.id in active_games:
+            del active_games[ctx.channel.id]
+            await ctx.send("⏹️ **تم إنهاء لعبة الطرنيب في هذا الروم بنجاح بواسطة الأدمن.**")
+        else:
+            await ctx.send("❌ لا توجد لعبة طرنيب نشطة حالياً في هذا الروم!")
 
 
 async def setup(bot):
