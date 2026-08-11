@@ -89,13 +89,10 @@ class BasraGameMainView(View):
 
     @discord.ui.button(label="📊 النقاط", style=discord.ButtonStyle.primary, custom_id="basra_scores")
     async def scores_btn(self, interaction: discord.Interaction, button: Button):
-        p1, p2 = self.game.players[0], self.game.players[1]
-        msg = (
-            f"📊 **النقاط الحالية:**\n"
-            f"• **{p1.name}**: {p1.score} نقطة | كروت مجمعة: {len(p1.captured)} | شكوبات: {p1.basra_count}\n"
-            f"• **{p2.name}**: {p2.score} نقطة | كروت مجمعة: {len(p2.captured)} | شكوبات: {p2.basra_count}\n"
-            f"🎯 الهدف: {self.game.target_score} نقطة"
-        )
+        msg = f"📊 **النقاط الحالية:**\n"
+        for p in self.game.players:
+            msg += f"• **{p.name}**: {p.score} نقطة | كروت مجمعة: {len(p.captured)} | شكوبات: {p.basra_count}\n"
+        msg += f"🎯 الهدف: {self.game.target_score} نقطة"
         if self.game.tie_bonus > 0:
             msg += f"\n⚡ مكافأة التعادل المعلقة: {self.game.tie_bonus} نقطة"
         await interaction.response.send_message(msg, ephemeral=True)
@@ -119,8 +116,8 @@ class BasraLobbyView(View):
 
     @discord.ui.button(label="إضافة بوت AI 🤖", style=discord.ButtonStyle.secondary)
     async def ai_btn(self, interaction: discord.Interaction, button: Button):
-        if len(self.game.players) >= 2:
-            return await interaction.response.send_message("❌ الطاولة مكتملة (لاعبين اثنين)!", ephemeral=True)
+        if len(self.game.players) >= 4:
+            return await interaction.response.send_message("❌ الطاولة مكتملة (4 لاعبين)!", ephemeral=True)
 
         self.game.fill_with_ai()
         embed = self.cog.build_lobby_embed(self.game)
@@ -157,18 +154,18 @@ class BasraCog(commands.Cog):
     def build_lobby_embed(self, game):
         embed = discord.Embed(
             title="🃏 طاولة شكوبا جديدة",
-            description="انضم للعب شكوبا تفاعلية (لاعبين اثنين)!",
+            description="انضم للعب شكوبا تفاعلية (4 لاعبين)!",
             color=discord.Color.green()
         )
         p_list = ""
-        for i in range(2):
+        for i in range(4):
             if i < len(game.players):
                 p = game.players[i]
                 p_list += f"**المقعد {i+1}**: {p.name}\n"
             else:
                 p_list += f"**المقعد {i+1}**: *(فارغ)*\n"
         embed.add_field(name="اللاعبون الحاليون:", value=p_list, inline=False)
-        embed.set_footer(text="الشكوبا لاعبان فقط (يمكن إكمال الثاني بـ AI)")
+        embed.set_footer(text="الشكوبا 4 لاعبين (يمكن إكمال المقاعد الفارغة بـ AI)")
         return embed
 
     async def update_table(self, channel, game):
@@ -176,16 +173,13 @@ class BasraCog(commands.Cog):
         await self.check_and_process_ai(channel, game)
 
         # 2. Render PIL table graphic
-        p1 = game.players[0] if len(game.players) > 0 else None
-        p2 = game.players[1] if len(game.players) > 1 else None
-
-        p1_info = {'name': p1.name, 'score': p1.score, 'captured_count': len(p1.captured)} if p1 else {}
-        p2_info = {'name': p2.name, 'score': p2.score, 'captured_count': len(p2.captured)} if p2 else {}
+        players_info = []
+        for p in game.players:
+            players_info.append({'name': p.name, 'score': p.score, 'captured_count': len(p.captured)})
 
         table_buf = render_basra_table(
             ground_cards=game.ground,
-            p1_info=p1_info,
-            p2_info=p2_info,
+            players_info=players_info,
             current_turn_idx=game.turn_index,
             log_msg=game.log_msg
         )

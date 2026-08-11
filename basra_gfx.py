@@ -54,14 +54,14 @@ def draw_single_card(suit, rank, width=80, height=115):
     draw.text((cx, cy), symbol, fill=color, font=f_center)
     return img
 
-def render_basra_table(ground_cards, p1_info, p2_info, current_turn_idx, log_msg=""):
+def render_basra_table(ground_cards, players_info, current_turn_idx, log_msg=""):
     """
-    Renders the central Basra table graphic showing:
+    Renders the central Scopa table graphic showing:
     - Ground cards face up on the table
-    - Scoreboard & Captured Cards count
+    - Scoreboard & Captured Cards count for up to 4 players
     - Turn banner
     """
-    W, H = 720, 480
+    W, H = 720, 520
     img = Image.new("RGBA", (W, H), BG_COLOR)
     draw = ImageDraw.Draw(img)
 
@@ -70,38 +70,48 @@ def render_basra_table(ground_cards, p1_info, p2_info, current_turn_idx, log_msg
     draw.rounded_rectangle([25, 25, W - 25, H - 25], radius=20, fill=(24, 46, 32), outline=(38, 68, 48), width=2)
 
     font_title = get_font(20)
-    font_sub = get_font(14)
-    font_header = get_font(16)
+    font_sub = get_font(13)
+    font_header = get_font(15)
 
-    # 1. Header Scoreboard Box
-    draw.rounded_rectangle([40, 35, W - 40, 95], radius=12, fill=(15, 30, 22, 230), outline=(60, 120, 85), width=2)
-
-    # Player 1 Info
-    p1_name = p1_info.get('name', 'لاعب 1')
-    p1_score = p1_info.get('score', 0)
-    p1_captured = p1_info.get('captured_count', 0)
-    draw.text((55, 42), f"👤 {p1_name[:12]}", fill=(240, 245, 240), font=font_header)
-    draw.text((55, 66), f"النقاط: {p1_score} | كروت مجمعة: {p1_captured}", fill=GOLD_COLOR, font=font_sub)
+    # 1. Header Scoreboard Box (4 players in 2x2)
+    draw.rounded_rectangle([40, 35, W - 40, 115], radius=12, fill=(15, 30, 22, 230), outline=(60, 120, 85), width=2)
 
     # Center Title
     draw.text((W // 2 - 45, 42), "🃏 لعبة الشكوبا", fill=GOLD_COLOR, font=font_title)
 
-    # Player 2 Info
-    p2_name = p2_info.get('name', 'لاعب 2')
-    p2_score = p2_info.get('score', 0)
-    p2_captured = p2_info.get('captured_count', 0)
-    draw.text((W - 220, 42), f"👤 {p2_name[:12]}", fill=(240, 245, 240), font=font_header)
-    draw.text((W - 220, 66), f"النقاط: {p2_score} | كروت مجمعة: {p2_captured}", fill=GOLD_COLOR, font=font_sub)
+    col1_x = 55
+    col2_x = W - 220
+    row1_y = 70
+    row2_y = 98
+
+    slots = [None] * 4
+    for idx, info in enumerate(players_info[:4]):
+        slots[idx] = info
+
+    def draw_player_info(slot_idx, x, y):
+        info = slots[slot_idx]
+        if not info:
+            return
+        name = info.get('name', f'لاعب {slot_idx + 1}')
+        score = info.get('score', 0)
+        captured = info.get('captured_count', 0)
+        draw.text((x, y), f"👤 {name[:11]}", fill=(240, 245, 240), font=font_header)
+        draw.text((x, y + 24), f"النقاط: {score} | كروت: {captured}", fill=GOLD_COLOR, font=font_sub)
+
+    draw_player_info(0, col1_x, row1_y)
+    draw_player_info(1, col2_x, row1_y)
+    draw_player_info(2, col1_x, row2_y)
+    draw_player_info(3, col2_x, row2_y)
 
     # 2. Ground Cards Area (الأرض)
-    draw.rounded_rectangle([40, 115, W - 40, 360], radius=15, fill=(18, 35, 24, 200), outline=(50, 90, 65), width=2)
-    draw.text((55, 125), f"🌱 كروت الأرض (الميدان) — العدد: {len(ground_cards)}", fill=(200, 225, 210), font=font_sub)
+    draw.rounded_rectangle([40, 130, W - 40, 380], radius=15, fill=(18, 35, 24, 200), outline=(50, 90, 65), width=2)
+    draw.text((55, 140), f"🌱 كروت الأرض (الميدان) — العدد: {len(ground_cards)}", fill=(200, 225, 210), font=font_sub)
 
     card_w, card_h = 75, 108
     margin_x = 12
     margin_y = 12
     start_x = 55
-    start_y = 150
+    start_y = 165
 
     # Display ground cards in neat rows
     for idx, card in enumerate(ground_cards):
@@ -114,11 +124,11 @@ def render_basra_table(ground_cards, p1_info, p2_info, current_turn_idx, log_msg
         img.paste(c_img, (px, py), c_img)
 
     # 3. Turn & Log Banner
-    curr_name = p1_name if current_turn_idx == 0 else p2_name
-    draw.rounded_rectangle([40, 380, W - 40, 450], radius=10, fill=(35, 22, 28, 240), outline=GOLD_COLOR, width=2)
-    draw.text((55, 390), f"👉 الدور الحالي: {curr_name[:15]}", fill=GOLD_COLOR, font=font_header)
+    curr_name = slots[current_turn_idx].get('name', 'لاعب') if current_turn_idx < len(slots) and slots[current_turn_idx] else 'لاعب'
+    draw.rounded_rectangle([40, 395, W - 40, 485], radius=10, fill=(35, 22, 28, 240), outline=GOLD_COLOR, width=2)
+    draw.text((55, 405), f"👉 الدور الحالي: {curr_name[:15]}", fill=GOLD_COLOR, font=font_header)
     if log_msg:
-        draw.text((55, 418), f"📢 {log_msg[:50]}", fill=(230, 235, 230), font=font_sub)
+        draw.text((55, 433), f"📢 {log_msg[:50]}", fill=(230, 235, 230), font=font_sub)
 
     buf = io.BytesIO()
     img.save(buf, format="PNG")
