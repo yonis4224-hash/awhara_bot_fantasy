@@ -346,20 +346,44 @@ async def on_message(message):
         return
     await bot.process_commands(message)
 
-@bot.command(name="اوامر", aliases=["أوامر", "ديباجات", "ديباجة", "help", "الاوامر"])
+@bot.command(name="اوامر", aliases=["أوامر", "ديباجات", "ديباجة", "help", "الاوامر", "commands"])
 async def show_commands(ctx):
-    cat = get_cat(ctx.channel.id)
-    if not cat:
-        return await ctx.send("❌ هذا الروم غير مخصص للديباجات.")
     embed = discord.Embed(
-        title=f"🎬 قائمة ديباجات {cat['name']}",
-        description=f"اكتب **رقم الديباجة** (مثال: `.{1}` أو `{1}`) أو استخدم القائمة:",
+        title="📋 قائمة أوامر البوت",
+        description="إليك جميع أوامر البوت المتاحة:",
         color=discord.Color.blue()
     )
-    for key, title in cat["titles"].items():
-        embed.add_field(name=f"الرقم: `{key}`", value=title, inline=False)
-    embed.set_footer(text="اختر من القائمة بالأسفل!")
-    await ctx.send(embed=embed, view=CatView(cat))
+    embed.add_field(name="🎬 ديباجات التصنيف",
+                    value="اكتب **رقم الديباجة** (1-15) في روم التصنيف المناسب:\n"
+                          "• `1` قصة • `2` خبر • `3` إعلان • `4` تصويت • `5` مشاهدة\n"
+                          "• `6` مراجعة • `7` توصية • `8` سؤال • `9` نظرية/توقع\n"
+                          "• `10` مقارنة • `11` شخصية/لاعب اليوم • `12` اقتباس\n"
+                          "• `13` مسابقة • `14` استفتاء • `15` مشاهدة جماعية\n"
+                          f"أو استخدم `.{1}` إلى `.{15}`",
+                    inline=False)
+    embed.add_field(name="🎰 لعبة الروليت",
+                    value="• `روليت` أو `roulette` - بدء لعبة الروليت\n"
+                          "• `توقف` أو `stop` - إيقاف الروليت\n"
+                          "• `نقاطي` أو `points` - عرض نقاطك ومخزونك",
+                    inline=False)
+    embed.add_field(name="🏪 متجر الخواص",
+                    value="• `متجر` أو `shop` - فتح متجر خواص الروليت\n"
+                          "• 🛡️ درع ضد الطرد (18 نقطة)\n"
+                          "• ⚡ طرد ثنائي (20 نقطة)\n"
+                          "• 🔄 طرد عكسي (25 نقطة)",
+                    inline=False)
+    embed.add_field(name="💖 تفاعلات",
+                    value="اكتب **نحبك** في أي مكان وسيرد البوت بكلام غزل ليبي 😉",
+                    inline=False)
+    cat = get_cat(ctx.channel.id)
+    if cat:
+        embed.add_field(name=f"🎬 ديباجات {cat['name']} في هذا الروم",
+                        value="يمكنك استخدام القائمة بالأسفل للاختيار مباشرة:",
+                        inline=False)
+        await ctx.send(embed=embed, view=CatView(cat))
+    else:
+        embed.set_footer(text="هذا الروم غير مخصص للديباجات، لكن باقي الأوامر تعمل هنا.")
+        await ctx.send(embed=embed)
 
 def make_template_cmd(num):
     key = str(num)
