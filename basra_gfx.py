@@ -84,7 +84,7 @@ def render_basra_table(ground_cards, p1_info, p2_info, current_turn_idx, log_msg
     draw.text((55, 66), f"النقاط: {p1_score} | كروت مجمعة: {p1_captured}", fill=GOLD_COLOR, font=font_sub)
 
     # Center Title
-    draw.text((W // 2 - 45, 42), "🃏 لعبة البصرة", fill=GOLD_COLOR, font=font_title)
+    draw.text((W // 2 - 45, 42), "🃏 لعبة الشكوبا", fill=GOLD_COLOR, font=font_title)
 
     # Player 2 Info
     p2_name = p2_info.get('name', 'لاعب 2')

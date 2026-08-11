@@ -1,6 +1,6 @@
 """
-Basra Discord Cog & Interactive Views (basra_cog.py)
-Handles Discord commands, lobby views, ephemeral hand views, select menus, and board table updates for Basra.
+شكوبا (Scopa) Discord Cog & Interactive Views (basra_cog.py)
+Handles Discord commands, lobby views, ephemeral hand views, select menus, and board table updates for Scopa.
 """
 import io
 import asyncio
@@ -80,7 +80,7 @@ class BasraGameMainView(View):
             view = BasraShowHandView(player, self.game, self.cog)
             await interaction.response.send_message("👇 **أوراقك الحالية. اختر بطاقة للعبها:**", file=file, view=view, ephemeral=True)
         else:
-            await interaction.response.send_message("👇 **أوراقك الحالية في البصرة:**", file=file, ephemeral=True)
+            await interaction.response.send_message("👇 **أوراقك الحالية في الشكوبا:**", file=file, ephemeral=True)
 
     @discord.ui.button(label="🔄 تحديث الطاولة", style=discord.ButtonStyle.secondary, custom_id="basra_refresh_table")
     async def refresh_btn(self, interaction: discord.Interaction, button: Button):
@@ -92,8 +92,8 @@ class BasraGameMainView(View):
         p1, p2 = self.game.players[0], self.game.players[1]
         msg = (
             f"📊 **النقاط الحالية:**\n"
-            f"• **{p1.name}**: {p1.score} نقطة | كروت مجمعة: {len(p1.captured)} | بصريات: {p1.basra_count}\n"
-            f"• **{p2.name}**: {p2.score} نقطة | كروت مجمعة: {len(p2.captured)} | بصريات: {p2.basra_count}\n"
+            f"• **{p1.name}**: {p1.score} نقطة | كروت مجمعة: {len(p1.captured)} | شكوبات: {p1.basra_count}\n"
+            f"• **{p2.name}**: {p2.score} نقطة | كروت مجمعة: {len(p2.captured)} | شكوبات: {p2.basra_count}\n"
             f"🎯 الهدف: {self.game.target_score} نقطة"
         )
         if self.game.tie_bonus > 0:
@@ -134,7 +134,7 @@ class BasraLobbyView(View):
         self.game.start_game()
         for b in self.children:
             b.disabled = True
-        await interaction.response.edit_message(content="🃏 **تم بدء اللعبة! جاري إعداد طاولة البصرة...**", view=self)
+        await interaction.response.edit_message(content="🃏 **تم بدء اللعبة! جاري إعداد طاولة الشكوبا...**", view=self)
 
         await self.cog.update_table(interaction.channel, self.game)
 
@@ -147,7 +147,7 @@ class BasraLobbyView(View):
             del active_basra_games[interaction.channel.id]
         from bot import unregister_game
         unregister_game(interaction.channel.id)
-        await interaction.response.edit_message(content="❌ **تم إلغاء طاولة البصرة.**", embed=None, view=None)
+        await interaction.response.edit_message(content="❌ **تم إلغاء طاولة الشكوبا.**", embed=None, view=None)
 
 
 class BasraCog(commands.Cog):
@@ -156,8 +156,8 @@ class BasraCog(commands.Cog):
 
     def build_lobby_embed(self, game):
         embed = discord.Embed(
-            title="🃏 طاولة بصرة جديدة",
-            description="انضم للعب بصرة تفاعلية (لاعبين اثنين)!",
+            title="🃏 طاولة شكوبا جديدة",
+            description="انضم للعب شكوبا تفاعلية (لاعبين اثنين)!",
             color=discord.Color.green()
         )
         p_list = ""
@@ -168,7 +168,7 @@ class BasraCog(commands.Cog):
             else:
                 p_list += f"**المقعد {i+1}**: *(فارغ)*\n"
         embed.add_field(name="اللاعبون الحاليون:", value=p_list, inline=False)
-        embed.set_footer(text="البصرة لاعبان فقط (يمكن إكمال الثاني بـ AI)")
+        embed.set_footer(text="الشكوبا لاعبان فقط (يمكن إكمال الثاني بـ AI)")
         return embed
 
     async def update_table(self, channel, game):
@@ -203,7 +203,7 @@ class BasraCog(commands.Cog):
 
         curr_p = game.get_current_player()
         mention = f"<@{curr_p.user_id}>" if not curr_p.is_ai else f"🤖 **{curr_p.name}**"
-        content = f"🃏 **لعبة البصرة** | الدور الآن على: {mention}\n📢 {game.log_msg}"
+        content = f"🃏 **لعبة الشكوبا** | الدور الآن على: {mention}\n📢 {game.log_msg}"
         view = BasraGameMainView(game, self)
 
         await channel.send(content=content, file=file, view=view)
@@ -217,11 +217,11 @@ class BasraCog(commands.Cog):
             await asyncio.sleep(2.0)
             game.ai_play_turn()
 
-    @commands.command(name="بصرة", aliases=["basra", "البصرة", "بصره"])
+    @commands.command(name="شكوبا", aliases=["scopa", "بصرة", "basra", "البصرة", "بصره"])
     async def cmd_basra(self, ctx):
-        """بدء لعبة بصرة جديدة"""
+        """بدء لعبة شكوبا جديدة"""
         if ctx.channel.id in active_basra_games:
-            return await ctx.send("❌ يوجد بالفعل طاولة بصرة نشطة في هذا الروم!")
+            return await ctx.send("❌ يوجد بالفعل طاولة شكوبا نشطة في هذا الروم!")
         # التحقق من عدم وجود لعبة أخرى من نوع مختلف
         from bot import has_active_game, get_active_game, register_game
         if has_active_game(ctx.channel.id):
@@ -229,7 +229,7 @@ class BasraCog(commands.Cog):
 
         game = BasraGame(ctx.channel.id, target_score=121)
         active_basra_games[ctx.channel.id] = game
-        register_game(ctx.channel.id, "basra")
+        register_game(ctx.channel.id, "scopa")
 
         # Add host as Player 1
         game.add_player(ctx.author.id, ctx.author.display_name)

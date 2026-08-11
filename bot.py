@@ -286,7 +286,7 @@ async def setup_hook():
     await bot.add_cog(BankCog(bot))
     log.info("✅ تم تحميل إضافة لعبة بنك الحظ (BankCog) بنجاح!")
     await bot.add_cog(BasraCog(bot))
-    log.info("✅ تم تحميل إضافة لعبة البصرة (BasraCog) بنجاح!")
+    log.info("✅ تم تحميل إضافة لعبة الشكوبا (BasraCog) بنجاح!")
 
 bot.setup_hook = setup_hook
 
@@ -787,7 +787,7 @@ async def end_any_game(ctx):
     # إنهاء اللعبة حسب نوعها
     if game_type == "roulette":
         active_roulettes.pop(cid, None)
-    elif game_type == "basra":
+    elif game_type in ("basra", "scopa"):
         from basra_cog import active_basra_games
         active_basra_games.pop(cid, None)
     elif game_type == "bank":
