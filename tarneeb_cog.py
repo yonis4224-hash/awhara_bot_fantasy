@@ -1,8 +1,5 @@
-"""
-Tarneeb Discord Cog & Interactive UI (tarneeb_cog.py)
-Handles Discord UI interactions, lobby views, ephemeral hand views, select menus, and commands.
-"""
 import io
+import random
 import asyncio
 import discord
 from discord.ext import commands
@@ -46,6 +43,9 @@ class CardSelectMenu(Select):
         card_code = self.values[0]
         suit, rank = card_code.split('-')
         chosen_card = Card(suit, int(rank))
+
+        # إلغاء مؤقت المهلة فور قيام اللاعب بحركته
+        self.cog.cancel_turn_timer(self.game)
 
         success, msg = self.game.play_card(self.player.seat, chosen_card)
         if not success:
@@ -241,6 +241,7 @@ class TarneebLobbyView(View):
         if str(interaction.user.id) != str(self.host_user.id):
             return await interaction.response.send_message("❌ فقط منشئ الطاولة يمكنه إلغاؤها!", ephemeral=True)
 
+        self.cog.cancel_turn_timer(self.game)
         if interaction.channel.id in active_games:
             del active_games[interaction.channel.id]
         from bot import unregister_game
@@ -252,10 +253,48 @@ class TarneebCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
+    def cancel_turn_timer(self, game):
+        """إلغاء أي مؤقت دور قيد التشغيل للعبة"""
+        if hasattr(game, "turn_timer_task") and game.turn_timer_task:
+            if not game.turn_timer_task.done():
+                game.turn_timer_task.cancel()
+            game.turn_timer_task = None
+
+    async def start_turn_timer(self, channel, game):
+        """بدء مهلة 20 ثانية لدور اللاعب الحالي إذا كان لاعباً حقيقياً"""
+        self.cancel_turn_timer(game)
+        if game.state == 'PLAYING':
+            curr_p = game.players[game.turn_index]
+            if not curr_p.is_ai:
+                game.turn_timer_task = asyncio.create_task(self._turn_timeout_task(channel, game, game.turn_index))
+
+    async def _turn_timeout_task(self, channel, game, seat):
+        """ينتظر 20 ثانية ثم يلعب بطاقة قانونية تلقائياً إذا لم يلعب اللاعب"""
+        try:
+            await asyncio.sleep(20)
+            if channel.id not in active_games or active_games.get(channel.id) is not game:
+                return
+            if game.state != 'PLAYING' or game.turn_index != seat:
+                return
+            player = game.players[seat]
+            if player.is_ai or not player.hand:
+                return
+            legal = game.get_legal_cards(seat)
+            if not legal:
+                return
+            auto_card = random.choice(legal)
+            game.play_card(seat, auto_card)
+            await channel.send(f"⌛ **انتهت مهلة الـ 20 ثانية لـ <@{player.user_id}>!** تم لعب بطاقة تلقائياً: `{auto_card}`")
+            await self.update_game_table(channel, game)
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            print(f"Error in Tarneeb turn timer: {e}")
+
     def build_lobby_embed(self, game):
         embed = discord.Embed(
             title="🃏 طاولة طرنيب جديدة",
-            description="انضم للطاولة للعب طرنيب 4 لاعبين (فريقين)!",
+            description="انضم للطاولة للعب طرنيب 4 لاعبين (فريقين)!\n⏱️ **مهلة كل دور:** 20 ثانية (لعب تلقائي عند التأخر)",
             color=discord.Color.gold()
         )
         p_list = ""
@@ -272,9 +311,11 @@ class TarneebCog(commands.Cog):
     async def update_game_table(self, channel, game):
         # إذا لم تعد اللعبة مسجلة (انتهت/أُلغيت) تجاهل التحديث لمنع إحياء طاولة قديمة
         if channel.id not in active_games or active_games.get(channel.id) is not game:
+            self.cancel_turn_timer(game)
             return
 
-        # 1. Process AI turns if active player is AI
+        # 1. إلغاء المؤقت أثناء معالجة أدوار الـ AI
+        self.cancel_turn_timer(game)
         await self.check_and_process_ai(channel, game)
 
         # 2. Render PIL table graphic
@@ -311,9 +352,10 @@ class TarneebCog(commands.Cog):
             desc = f"🔥 **اختيار الطرنيب (الحكم)**\nالفائز بالطلب: **{bidder_name}** ({game.current_bid})\nاختر نوع الطرنيب للجولة!"
             view = TarneebTrumpSelectView(game, self) if not game.players[game.highest_bidder].is_ai else TarneebGameMainView(game, self)
         elif game.state == 'PLAYING':
-            desc = f"🎴 **مرحلة اللعب**\nالدور الآن على: {turn_mention}\nاضغط على **'عرض أوراقي'** لرؤية أوراقك واختيار بطاقة!"
+            desc = f"🎴 **مرحلة اللعب**\nالدور الآن على: {turn_mention} ⏱️ (لديك 20 ثانية)\nاضغط على **'عرض أوراقي'** لرؤية أوراقك واختيار بطاقة!"
             view = TarneebGameMainView(game, self)
         elif game.state == 'ROUND_END':
+            self.cancel_turn_timer(game)
             desc = f"🏁 **انتهت الجولة!**\n{game.last_round_msg}\n\nجاري بدء الجولة التالية خلال ثوانٍ..."
             view = TarneebGameMainView(game, self)
             await channel.send(content=desc, file=file, view=view)
@@ -321,6 +363,7 @@ class TarneebCog(commands.Cog):
             game.start_new_round()
             return await self.update_game_table(channel, game)
         elif game.state == 'GAME_OVER':
+            self.cancel_turn_timer(game)
             desc = f"👑 **انتهت اللعبة بالكامل!**\n{game.last_round_msg}"
             view = None
             if channel.id in active_games:
@@ -333,6 +376,10 @@ class TarneebCog(commands.Cog):
             view = TarneebGameMainView(game, self)
 
         await channel.send(content=desc, file=file, view=view)
+
+        # 4. بدء مهلة الـ 20 ثانية للاعب البشري بعد إرسال واجهة الدور
+        if game.state == 'PLAYING' and not curr_p.is_ai:
+            await self.start_turn_timer(channel, game)
 
     async def check_and_process_ai(self, channel, game):
         """Processes AI turns sequentially if current turn is AI."""
@@ -375,7 +422,7 @@ class TarneebCog(commands.Cog):
         # التحقق من عدم وجود لعبة أخرى من نوع مختلف
         from bot import has_active_game, get_active_game, register_game
         if has_active_game(ctx.channel.id):
-            return await ctx.send(f"❌ يوجد لعبة **{get_active_game(ctx.channel.id)}** تعمل في هذا الروم بالفعل!")
+            return await ctx.send(f"❌ يوجد لعبة **{get_active_game(ctx.channel.id)}** تعمل في هذا الروم بالفعل!\nيمكنك إنهاؤها أولاً بأمر: `.انهاء`")
 
         game = TarneebGame(ctx.channel.id)
         active_games[ctx.channel.id] = game
@@ -388,13 +435,17 @@ class TarneebCog(commands.Cog):
         view = TarneebLobbyView(ctx.author, game, self)
         await ctx.send(embed=embed, view=view)
 
-    @commands.command(name="_انهاء", aliases=["انهاء_الطرنيب", "stop_tarneeb"])
+    @commands.command(name="_انهاء_الطرنيب", aliases=["stop_tarneeb"])
     async def cmd_end_tarneeb(self, ctx):
         """إنهاء لعبة الطرنيب الحالية بواسطة الأدمن"""
-        if not ctx.author.guild_permissions.manage_events and not ctx.author.guild_permissions.administrator:
+        from bot import is_admin_or_mod
+        if not is_admin_or_mod(ctx):
             return await ctx.send("❌ فقط المسؤولين يمكنهم إلغاء أو إنهاء اللعبة!")
 
         if ctx.channel.id in active_games:
+            game = active_games.get(ctx.channel.id)
+            if game:
+                self.cancel_turn_timer(game)
             del active_games[ctx.channel.id]
             from bot import unregister_game
             unregister_game(ctx.channel.id)

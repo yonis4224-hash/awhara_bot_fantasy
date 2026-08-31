@@ -260,14 +260,34 @@ class CatView(View):
 from tarneeb_cog import TarneebCog
 from bank_cog import BankCog
 from basra_cog import BasraCog
+from profile_cog import ProfileCog
 
 # سجل مركزي لجميع الألعاب النشطة (channel_id -> game_type)
 active_all_games = {}
 
+GAME_NAMES_AR = {
+    "roulette": "الروليت 🎡",
+    "tarneeb": "الطرنيب 🎴",
+    "bank": "بنك الحظ 🏰",
+    "basra": "البصرة 🃏",
+    "scopa": "البصرة / الشكوبا 🃏"
+}
+
+def is_admin_or_mod(ctx):
+    """التحقق مما إذا كان المستخدم يملك صلاحيات إدارية أو إشرافية في السيرفر"""
+    if not ctx.guild:
+        return True
+    p = ctx.author.guild_permissions
+    return (
+        p.administrator
+        or p.manage_guild
+        or p.manage_events
+        or p.manage_messages
+        or ctx.author.id == ctx.guild.owner_id
+    )
+
 def find_active_game(channel_id):
-    """يبحث عن أي لعبة نشطة في القناة من جميع السجلات ويعيد نوعها (أو None).
-    يفحص السجل المركزي أولاً ثم سجلات كل لعبة مباشرة حتى لا تختفي لعبة
-    حقيقية بسبب عدم تزامن السجلات."""
+    """يبحث عن أي لعبة نشطة في القناة من جميع السجلات ويعيد نوعها (أو None)."""
     t = active_all_games.get(channel_id)
     if t:
         return t
@@ -276,7 +296,7 @@ def find_active_game(channel_id):
     try:
         from basra_cog import active_basra_games
         if channel_id in active_basra_games:
-            return "scopa"
+            return "basra"
     except Exception:
         pass
     try:
@@ -302,8 +322,11 @@ def unregister_game(channel_id):
     active_all_games.pop(channel_id, None)
 
 def get_active_game(channel_id):
-    """الحصول على نوع اللعبة النشطة في القناة"""
-    return find_active_game(channel_id)
+    """الحصول على نوع اللعبة النشطة في القناة بالاسم العربي"""
+    gt = find_active_game(channel_id)
+    if gt:
+        return GAME_NAMES_AR.get(gt, gt)
+    return None
 
 def has_active_game(channel_id):
     """التحقق من وجود لعبة نشطة في القناة"""
@@ -316,6 +339,8 @@ async def setup_hook():
     log.info("✅ تم تحميل إضافة لعبة بنك الحظ (BankCog) بنجاح!")
     await bot.add_cog(BasraCog(bot))
     log.info("✅ تم تحميل إضافة لعبة الشكوبا (BasraCog) بنجاح!")
+    await bot.add_cog(ProfileCog(bot))
+    log.info("✅ تم تحميل إضافة البطاقات التعريفية ونظام التفاعل (ProfileCog) بنجاح!")
 
 bot.setup_hook = setup_hook
 
@@ -792,38 +817,109 @@ async def roulette_cmd(ctx):
         unregister_game(gid)
 
 
-@bot.command(name="توقف", aliases=["stop"])
+@bot.command(name="توقف", aliases=["stop", "_توقف"])
 async def stop_cmd(ctx):
-    if not ctx.author.guild_permissions.manage_events:
-        return await ctx.send("❌ | فقط Manga Events يمكنهم قيام بهذا الامر")
-    gid = ctx.channel.id
-    if gid not in active_roulettes:
-        return await ctx.send("❌ لا توجد لعبة قيد التشغيل في الوقت الحالي")
-    del active_roulettes[gid]
-    unregister_game(gid)
-    await ctx.send(f"❌ | تم طلب إيقاف لعبة روليت من قبل <@{ctx.author.id}>")
+    if not is_admin_or_mod(ctx):
+        return await ctx.send("❌ | فقط المسؤولين (Admins) يمكنهم إيقاف اللعبة")
+    return await end_any_game(ctx)
 
 
-@bot.command(name="انهاء", aliases=["end", "إنهاء", "stop_all", "توقف_الكل"])
+@bot.command(name="انهاء", aliases=["_انهاء", "إنهاء", "_إنهاء", "end", "stop_all", "توقف_الكل", "انهاء_اللعبه", "_انهاء_اللعبه", "stop_game", "ايقاف", "_ايقاف"])
 async def end_any_game(ctx):
-    """إنهاء أي لعبة نشطة في هذا الروم"""
+    """إنهاء أي لعبة نشطة في هذا الروم بواسطة الأدمن"""
+    if not is_admin_or_mod(ctx):
+        return await ctx.send("❌ فقط الإدمن والمسؤولين (Administrator / Manage Events) يمكنهم إنهاء اللعبة!")
+
     cid = ctx.channel.id
     game_type = find_active_game(cid)
 
     if not game_type:
-        return await ctx.send("❌ لا توجد لعبة قيد التشغيل في هذا الروم!")
+        return await ctx.send("❌ لا توجد أي لعبة نشطة قيد التشغيل حالياً في هذا الروم!")
 
-    # تنظيف جميع السجلات لضمان إزالة اللعبة نهائياً مهما كان مصدرها
+    # 1. إلغاء أي مؤقتات نشطة وتنظيف كائنات الألعاب
+    try:
+        from tarneeb_cog import active_games as active_tarneeb
+        if cid in active_tarneeb:
+            t_game = active_tarneeb.get(cid)
+            cog = bot.get_cog("TarneebCog")
+            if cog and t_game:
+                cog.cancel_turn_timer(t_game)
+    except Exception:
+        pass
+
+    try:
+        from basra_cog import active_basra_games
+        if cid in active_basra_games:
+            b_game = active_basra_games.get(cid)
+            cog = bot.get_cog("BasraCog")
+            if cog and b_game:
+                cog.cancel_turn_timer(b_game)
+    except Exception:
+        pass
+
+    # 2. تنظيف جميع السجلات لضمان إزالة اللعبة نهائياً
     active_all_games.pop(cid, None)
     active_roulettes.pop(cid, None)
-    from basra_cog import active_basra_games
-    active_basra_games.pop(cid, None)
-    from bank_cog import active_bank_games
-    active_bank_games.pop(cid, None)
-    from tarneeb_cog import active_games as active_tarneeb
-    active_tarneeb.pop(cid, None)
+    try:
+        from basra_cog import active_basra_games
+        active_basra_games.pop(cid, None)
+    except Exception:
+        pass
+    try:
+        from bank_cog import active_bank_games
+        active_bank_games.pop(cid, None)
+    except Exception:
+        pass
+    try:
+        from tarneeb_cog import active_games as active_tarneeb
+        active_tarneeb.pop(cid, None)
+    except Exception:
+        pass
 
-    await ctx.send(f"✅ تم إنهاء لعبة **{game_type}** في هذا الروم بواسطة <@{ctx.author.id}>!")
+    gname = GAME_NAMES_AR.get(game_type, game_type)
+    await ctx.send(f"⏹️ تم إنهاء لعبة **{gname}** في هذا الروم بنجاح بواسطة <@{ctx.author.id}>!")
+
+
+@bot.command(name="العاب", aliases=["ألعاب", "الألعاب", "الالعاب", "games"])
+async def games_cmd(ctx):
+    """عرض قائمة جميع الألعاب التفاعلية والأوامر الخاصة بها"""
+    embed = discord.Embed(
+        title="🎮 دليل الألعاب التفاعلية في البوت",
+        description="جميع الألعاب منفصلة ولها أوامر مختلفة ومستقلة.\n*(ملاحظة: لا يمكن تشغيل أكثر من لعبة في نفس الروم في آنٍ واحد)*",
+        color=0x00FFAA
+    )
+    embed.add_field(
+        name="🎡 1. لعبة الروليت (Roulette)",
+        value="• أمر البدء: `.روليت` أو `!روليت`\n• المتجر: `.متجر` | رصيد النقاط: `.نقاطي`\n• إيقاف: `.انهاء`",
+        inline=False
+    )
+    embed.add_field(
+        name="🎴 2. لعبة الطرنيب (Tarneeb - 4 لاعبين)",
+        value="• أمر البدء: `.طرنيب` أو `!طرنيب`\n• ميزة المؤقت: 20 ثانية لكل دور (لعب تلقائي عند التأخر)\n• إيقاف الأدمن: `.انهاء` أو `_انهاء_الطرنيب`",
+        inline=False
+    )
+    embed.add_field(
+        name="🏰 3. لعبة بنك الحظ (Bank Al-Haz / Monopoly)",
+        value="• أمر البدء: `.بنك` أو `.بنك_الحظ` أو `!bank`\n• رقعة بالصور ورسم البيادق وشراء وتطوير المدن\n• إيقاف الأدمن: `.انهاء`",
+        inline=False
+    )
+    embed.add_field(
+        name="🃏 4. لعبة البصرة / الشكوبا (Basra / Scopa)",
+        value="• أمر البدء: `.بصرة` أو `!بصرة` أو `.شكوبا`\n• ميزة المؤقت: 20 ثانية لكل دور (لعب تلقائي عند التأخر)\n• إيقاف الأدمن: `.انهاء` أو `_انهاء_البصرة`",
+        inline=False
+    )
+    embed.add_field(
+        name="💳 5. البطاقات التعريفية والتفاعل (Profile & Rank Cards)",
+        value="• عرض بطاقتك: `.بروفايل` أو `.id` أو `!profile` أو `.بطاقتي`\n• توب المتفاعلين: `.توب` أو `!top`\n• متصدري الأسبوع: `.توب_الاسبوع` أو `!weekly`",
+        inline=False
+    )
+    embed.add_field(
+        name="🛡️ أوامر الإدارة والإيقاف:",
+        value="• لأي أدمن لإنهاء وحذف أي لعبة نشطة فوراً: `.انهاء` أو `_انهاء` أو `!stop`",
+        inline=False
+    )
+    embed.set_footer(text="استمتعوا باللعب والتنافس! 🎲")
+    await ctx.send(embed=embed)
 
 
 async def run_game(ctx, gid):
