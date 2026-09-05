@@ -386,6 +386,9 @@ class TarneebCog(commands.Cog):
         while True:
             if game.state not in ['BIDDING', 'SELECT_TRUMP', 'PLAYING']:
                 break
+            # If game was externally ended and removed from active_games, stop
+            if channel.id not in active_games or active_games.get(channel.id) is not game:
+                break
 
             if game.state == 'BIDDING':
                 curr_p = game.players[game.turn_index]
@@ -445,6 +448,7 @@ class TarneebCog(commands.Cog):
         if ctx.channel.id in active_games:
             game = active_games.get(ctx.channel.id)
             if game:
+                game.state = 'GAME_OVER'
                 self.cancel_turn_timer(game)
             del active_games[ctx.channel.id]
             from bot import unregister_game

@@ -843,6 +843,7 @@ async def end_any_game(ctx):
             t_game = active_tarneeb.get(cid)
             cog = bot.get_cog("TarneebCog")
             if cog and t_game:
+                t_game.state = 'GAME_OVER'  # <-- Added
                 cog.cancel_turn_timer(t_game)
     except Exception:
         pass
@@ -853,6 +854,7 @@ async def end_any_game(ctx):
             b_game = active_basra_games.get(cid)
             cog = bot.get_cog("BasraCog")
             if cog and b_game:
+                b_game.state = 'GAME_OVER'  # <-- Added
                 cog.cancel_turn_timer(b_game)
     except Exception:
         pass

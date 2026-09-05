@@ -263,6 +263,9 @@ class BasraCog(commands.Cog):
     async def check_and_process_ai(self, channel, game):
         """Processes AI turns sequentially if current turn is AI."""
         while game.state == 'PLAYING':
+            # If game was externally ended and removed from active_games, stop
+            if channel.id not in active_basra_games or active_basra_games.get(channel.id) is not game:
+                break
             curr_p = game.get_current_player()
             if not curr_p.is_ai:
                 break
@@ -300,6 +303,7 @@ class BasraCog(commands.Cog):
         if ctx.channel.id in active_basra_games:
             game = active_basra_games.get(ctx.channel.id)
             if game:
+                game.state = 'GAME_OVER'
                 self.cancel_turn_timer(game)
             del active_basra_games[ctx.channel.id]
             from bot import unregister_game
