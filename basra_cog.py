@@ -254,6 +254,9 @@ class BasraCog(commands.Cog):
         content = f"🃏 **لعبة البصرة** | الدور الآن على: {mention} ⏱️ (لديك 20 ثانية)\n📢 {game.log_msg}"
         view = BasraGameMainView(game, self)
 
+        if channel.id not in active_basra_games or active_basra_games.get(channel.id) is not game:
+            self.cancel_turn_timer(game)
+            return
         await channel.send(content=content, file=file, view=view)
 
         # 4. بدء مهلة الـ 20 ثانية للاعب البشري بعد إرسال واجهة الدور
