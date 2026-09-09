@@ -261,6 +261,7 @@ from tarneeb_cog import TarneebCog
 from bank_cog import BankCog
 from basra_cog import BasraCog
 from profile_cog import ProfileCog
+from admin_cog import AdminCog
 
 # سجل مركزي لجميع الألعاب النشطة (channel_id -> game_type)
 active_all_games = {}
@@ -341,6 +342,8 @@ async def setup_hook():
     log.info("✅ تم تحميل إضافة لعبة الشكوبا (BasraCog) بنجاح!")
     await bot.add_cog(ProfileCog(bot))
     log.info("✅ تم تحميل إضافة البطاقات التعريفية ونظام التفاعل (ProfileCog) بنجاح!")
+    await bot.add_cog(AdminCog(bot))
+    log.info("✅ تم تحميل إضافة القرارات والإعلانات الإدارية (AdminCog) بنجاح!")
 
 bot.setup_hook = setup_hook
 
@@ -447,6 +450,9 @@ async def show_commands(ctx):
                     inline=False)
     embed.add_field(name="💖 تفاعلات",
                     value="اكتب **نحبك** في أي مكان وسيرد البوت بكلام غزل ليبي 😉",
+                    inline=False)
+    embed.add_field(name="🛡️ أوامر الإدارة",
+                    value="• `_اداره` أو `_إدارة` - فتح لوحة القرارات والإعلانات الإدارية والفعاليات (15 قرار إداري)",
                     inline=False)
     cat = get_cat(ctx.channel.id)
     if cat:
@@ -968,6 +974,7 @@ async def run_game(ctx, gid):
     if choice:
         c_type, c_val = choice
         if c_type in ("kick", "random_kick"):
+            is_random = (c_type == "random_kick")
             if c_type == "kick":
                 victim = next((p for p in players if p["number"] == c_val), None)
             else:
@@ -981,20 +988,25 @@ async def run_game(ctx, gid):
             # Check Target for Reverse Kick
             if use_item(victim["id"], "reverse_kick"):
                 v_pts = record_kick(victim["id"])
-                await ctx.send(f"🔄 **طرد عكسي!** حاول <@{winner['id']}> طرد <@{victim['id']}>، لكن <@{victim['id']}> يمتلك خاصية **الطرد العكسي 🔄**!\n"
+                kick_str = " عشوائياً" if is_random else ""
+                await ctx.send(f"🔄 **طرد عكسي!** حاول <@{winner['id']}> طرد <@{victim['id']}>{kick_str}، لكن <@{victim['id']}> يمتلك خاصية **الطرد العكسي 🔄**!\n"
                                f"انعكست الضربة وطُرد المعتدي <@{winner['id']}> من اللعبة! وحصل <@{victim['id']}> على **+1 نقطة** 🎯 (نقاطه: {v_pts})")
                 g["players"] = [p for p in g["players"] if p["id"] != winner["id"]]
                 return await run_game(ctx, gid)
 
             # Check Target for Shield
             elif use_item(victim["id"], "shield"):
-                await ctx.send(f"🛡️ **درع ضد الطرد!** حاول <@{winner['id']}> طرد <@{victim['id']}>، لكن **الدرع 🛡️** حمى <@{victim['id']}> وتم تدمير الدرع!\n"
+                kick_str = " عشوائياً" if is_random else ""
+                await ctx.send(f"🛡️ **درع ضد الطرد!** حاول <@{winner['id']}> طرد <@{victim['id']}>{kick_str}، لكن **الدرع 🛡️** حمى <@{victim['id']}> وتم تدمير الدرع!\n"
                                f"نجا <@{victim['id']}> وتستمر اللعبة بدون أي طرد هذه الجولة.")
                 return await run_game(ctx, gid)
 
             else:
                 kicker_pts = record_kick(winner["id"])
-                await ctx.send(f"💣 | تم طرد <@{victim['id']}> من اللعبة وحصل <@{winner['id']}> على **+1 نقطة** 🎯 (نقاطه: {kicker_pts}) ، سيتم بدء الجولة القادمة في بضع ثواني...")
+                if is_random:
+                    await ctx.send(f"🎲 | **طرد عشوائي!** تم طرد <@{victim['id']}> من اللعبة عشوائياً وحصل <@{winner['id']}> على **+1 نقطة** 🎯 (نقاطه: {kicker_pts}) ، سيتم بدء الجولة القادمة في بضع ثواني...")
+                else:
+                    await ctx.send(f"💣 | تم طرد <@{victim['id']}> من اللعبة وحصل <@{winner['id']}> على **+1 نقطة** 🎯 (نقاطه: {kicker_pts}) ، سيتم بدء الجولة القادمة في بضع ثواني...")
                 g["players"] = [p for p in g["players"] if p["id"] != victim["id"]]
                 return await run_game(ctx, gid)
 
