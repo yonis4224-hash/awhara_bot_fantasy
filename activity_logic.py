@@ -196,7 +196,7 @@ def get_user_rank_and_title(user_id, username="", display_name=""):
         theme = "gold"
     elif rank == 2:
         title = "🥈 متفاعل دائم"
-        theme = "purple"
+        theme = "silver"
     elif 3 <= rank <= 10:
         title = "✨ متفاعل"
         theme = "purple"
@@ -210,7 +210,7 @@ def get_user_rank_and_title(user_id, username="", display_name=""):
             title = "🔥 عضو متفاعل"
         else:
             title = "🌱 عضو نشيط"
-        theme = "dark"
+        theme = "blue"
 
     user_entry["title"] = title
     user_entry["theme"] = theme
