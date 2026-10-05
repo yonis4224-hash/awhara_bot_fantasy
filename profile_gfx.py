@@ -50,7 +50,7 @@ def _load(path, size):
     key = (path, size)
     if key not in _font_cache:
         try:
-            _font_cache[key] = ImageFont.truetype(path, size)
+            _font_cache[key] = ImageFont.truetype(path, size, layout_engine=ImageFont.Layout.BASIC)
         except Exception:
             _font_cache[key] = None
     return _font_cache[key]
@@ -149,6 +149,20 @@ def draw_stat(draw, x_left, x_right, base, label, value, lcol, vcol, start, mini
     draw_text(draw, x_left, base, label, size, lcol)
     draw_text(draw, x_right - text_w(value, size), base, value, size, vcol)
 
+def draw_mini(draw, x_left, x_right, base_label, base_value, label, value, lcol, vcol, lsize, vsize):
+    # small centred column: label on top, value underneath
+    width = x_right - x_left
+    while vsize > 16 and text_w(value, vsize) > width:
+        vsize -= 2
+    while lsize > 14 and text_w(label, lsize) > width:
+        lsize -= 2
+    cx = (x_left + x_right) / 2
+    draw_text(draw, cx - text_w(label, lsize) / 2, base_label, label, lsize, lcol)
+    draw_text(draw, cx - text_w(value, vsize) / 2, base_value, value, vsize, vcol)
+
+CROP = (250, 170, 1126, 598)   # card area (+ small margin) inside the 1376x768 template
+SCALE = 1.7                    # upscale so the card is large inside Discord
+
 def render_profile_card(avatar_img, user_data, is_admin=False):
     theme_key = user_data.get('theme', 'default')
     if theme_key not in ('default', 'gold', 'silver', 'purple'):
@@ -158,9 +172,19 @@ def render_profile_card(avatar_img, user_data, is_admin=False):
         card = Image.open(bg_path).convert('RGBA')
     except Exception:
         card = Image.new('RGBA', (1376, 768), (30, 30, 30, 255))
+    card = card.crop(CROP)
+    W, H = int(card.width * SCALE), int(card.height * SCALE)
+    card = card.resize((W, H), Image.LANCZOS)
     draw = ImageDraw.Draw(card)
 
-    cx, cy, av_r = 456, 384, 118
+    def X(x):
+        return int((x - CROP[0]) * SCALE)
+    def Y(y):
+        return int((y - CROP[1]) * SCALE)
+    def S(v):
+        return int(v * SCALE)
+
+    cx, cy, av_r = X(456), Y(384), S(118)
     if avatar_img:
         try:
             d = av_r * 2
@@ -172,7 +196,8 @@ def render_profile_card(avatar_img, user_data, is_admin=False):
         except Exception:
             pass
 
-    x0, max_w = 662, 375
+    x0, x1 = X(662), X(662 + 375)
+    max_w = x1 - x0
     white = (255, 255, 255)
     hl = {'gold': (255, 215, 80), 'purple': (225, 150, 255)}.get(theme_key, (90, 235, 255))
     SHADOW[0] = (0, 0, 0)
@@ -186,14 +211,14 @@ def render_profile_card(avatar_img, user_data, is_admin=False):
     rank = user_data.get('rank', 1)
     level = user_data.get('level', 1)
 
-    draw_line(draw, x0, 316, max_w, [(shape(name), white)], 62, minimum=26)
-    draw_stat(draw, x0, x0 + max_w, 376, ar('النقاط'), f'{xp:,}', hl, white, 44)
-    draw_stat(draw, x0, x0 + max_w, 420, ar('المستوى'), str(level), hl, white, 44)
-    draw_stat(draw, x0, x0 + 178, 490, ar('الترتيب'), f'#{rank}', hl, white, 32)
-    draw_stat(draw, x0 + 200, x0 + max_w, 490, ar('الرسائل'), f'{msgs:,}', hl, white, 32)
+    draw_line(draw, x0, Y(316), max_w, [(shape(name), white)], S(62), minimum=S(26))
+    draw_stat(draw, x0, x1, Y(376), ar('النقاط'), f'{xp:,}', hl, white, S(44))
+    draw_stat(draw, x0, x1, Y(420), ar('المستوى'), str(level), hl, white, S(44))
+    draw_mini(draw, X(662), X(662 + 175), Y(472), Y(509), ar('الترتيب'), f'#{rank}', hl, white, S(27), S(38))
+    draw_mini(draw, X(662 + 200), x1, Y(472), Y(509), ar('الرسائل'), f'{msgs:,}', hl, white, S(27), S(38))
 
     buf = io.BytesIO()
-    card.convert('RGB').save(buf, format='JPEG', quality=95)
+    card.convert('RGB').save(buf, format='PNG')
     buf.seek(0)
     return buf
 
@@ -220,5 +245,5 @@ if __name__ == '__main__':
     ]
     for theme, name, user, xp, msgs, rank, lvl in test_cases:
         buf = render_profile_card(None, {'theme': theme, 'display_name': name, 'username': user, 'xp': xp, 'total_messages': msgs, 'rank': rank, 'level': lvl})
-        open(f'final_{theme}_v2.jpg', 'wb').write(buf.read())
-        print(f'final_{theme}_v2.jpg generated!')
+        open(f'final_{theme}_v3.png', 'wb').write(buf.read())
+        print(f'final_{theme}_v3.png generated!')
