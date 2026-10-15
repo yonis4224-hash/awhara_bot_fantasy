@@ -5,11 +5,7 @@ import random
 import math
 import time
 
-from roulette_gif import make_gif, download_avatar
-from roulette_shop import (
-    RouletteShopView, get_user_data, add_points, get_points,
-    buy_item, has_item, use_item, ITEMS, record_kick, record_win
-)
+from roulette_cog import RouletteCog
 
 import discord
 from discord.ext import commands
@@ -292,7 +288,8 @@ def find_active_game(channel_id):
     t = active_all_games.get(channel_id)
     if t:
         return t
-    if channel_id in active_roulettes:
+    cog = bot.get_cog("RouletteCog")
+    if cog and cog.is_game_active(channel_id):
         return "roulette"
     try:
         from basra_cog import active_basra_games
@@ -344,6 +341,8 @@ async def setup_hook():
     log.info("✅ تم تحميل إضافة البطاقات التعريفية ونظام التفاعل (ProfileCog) بنجاح!")
     await bot.add_cog(AdminCog(bot))
     log.info("✅ تم تحميل إضافة القرارات والإعلانات الإدارية (AdminCog) بنجاح!")
+    await bot.add_cog(RouletteCog(bot))
+    log.info("✅ تم تحميل إضافة لعبة الروليت (RouletteCog) بنجاح!")
 
 bot.setup_hook = setup_hook
 
@@ -439,8 +438,9 @@ async def show_commands(ctx):
                     inline=False)
     embed.add_field(name="🎰 لعبة الروليت",
                     value="• `روليت` أو `roulette` - بدء لعبة الروليت\n"
-                          "• `توقف` أو `stop` - إيقاف الروليت\n"
-                          "• `نقاطي` أو `points` - عرض نقاطك ومخزونك",
+                          "• `توقف` أو `انهاء` - إيقاف اللعبة بواسطة المشرف\n"
+                          "• `نقاطي` أو `points` - عرض نقاطك ومخزونك\n"
+                          "• `توب_الروليت` - قائمة متصدري الروليت بالسيرفر",
                     inline=False)
     embed.add_field(name="🏪 متجر الخواص",
                     value="• `متجر` أو `shop` - فتح متجر خواص الروليت\n"
@@ -476,351 +476,6 @@ def make_template_cmd(num):
 for _num in range(1, 16):
     bot.command(name=str(_num))(make_template_cmd(_num))
 
-# ------------------------------------------------------------------------------
-# لعبة الروليت
-# ------------------------------------------------------------------------------
-active_roulettes = {}
-
-# ------------------------------------------------------------------------------
-# روليت — مطابق لبوت Shuruhatik المرجعي (طبق الأصل)
-# ------------------------------------------------------------------------------
-WAITING_TIME = 27
-MAX_SEATS = 40
-HOWTO = ("**1-** انضم في اللعبة\n"
-         "**2-** ستبدأ الجولة الأولى وسيتم تدوير العجلة واختيار لاعب عشوائي\n"
-         "**3-** إذا كنت اللاعب المختار ، فستختار لاعبًا من اختيارك ليتم طرده من اللعبة\n"
-         "**4-** يُطرد اللاعب وتبدأ جولة جديدة ، عندما يُطرد جميع اللاعبين ويتبقى لاعبان فقط ، ستدور العجلة ويكون اللاعب المختار هو الفائز باللعبة")
-
-
-def roulette_players_text(players):
-    if not players:
-        return "لا يوجد لاعبين مشاركين باللعبة"
-    return "\n".join(
-        f"`{p['number']:02d}`: <@{p['id']}>"
-        for p in sorted(players, key=lambda x: x["number"])
-    )
-
-
-class JoinBtn(discord.ui.Button):
-    def __init__(self, gid, game_id, number=None, is_random=False, is_leave=False, row=0):
-        self.gid = gid
-        self.game_id = game_id
-        self.number = number
-        if is_random:
-            super().__init__(label="دخول عشوائي", style=discord.ButtonStyle.success,
-                             custom_id=f"join_random_roulette_{gid}_{game_id}", row=row)
-        elif is_leave:
-            super().__init__(label="اخرج من اللعبة", style=discord.ButtonStyle.danger,
-                             custom_id=f"leave_roulette_{gid}_{game_id}", row=row)
-        else:
-            super().__init__(label=str(number), style=discord.ButtonStyle.secondary,
-                             custom_id=f"join_{number}_roulette_{gid}_{game_id}", row=row)
-
-    async def callback(self, ia):
-        g = active_roulettes.get(self.gid)
-        if not g:
-            return await ia.response.send_message("❌ انتهت الجولة.", ephemeral=True)
-        if self.custom_id.startswith("leave"):
-            pl = next((p for p in g["players"] if p["id"] == ia.user.id), None)
-            if not pl:
-                return await ia.response.send_message("❌ انت غير مشارك بالفعل", ephemeral=True)
-            g["players"] = [p for p in g["players"] if p["id"] != ia.user.id]
-            btn = g["btns"].get(pl["number"])
-            if btn:
-                btn.disabled = False
-                btn.label = str(pl["number"])
-            await self._refresh(g)
-            return await ia.response.send_message("✅ | تم إزالتك من اللعبة", ephemeral=True)
-        if any(p["id"] == ia.user.id for p in g["players"]):
-            return await ia.response.send_message("انت مشارك بالفعل لكي تغير مكانك يجب عليك الخروج من الروليت ثم الدخول مرة اخري", ephemeral=True)
-        if len(g["players"]) >= MAX_SEATS:
-            return await ia.response.send_message("عدد المشاركين مكتمل", ephemeral=True)
-        number = self.number
-        if self.custom_id.startswith("join_random"):
-            taken = {p["number"] for p in g["players"]}
-            free = [n for n in range(1, MAX_SEATS + 1) if n not in taken]
-            if not free:
-                return await ia.response.send_message("عدد المشاركين مكتمل", ephemeral=True)
-            number = random.choice(free)
-        elif number in {p["number"] for p in g["players"]}:
-            return await ia.response.send_message("عدد المشاركين مكتمل", ephemeral=True)
-        g["players"].append({
-            "number": number,
-            "id": ia.user.id,
-            "username": ia.user.display_name,
-            "avatarURL": ia.user.display_avatar.url,
-        })
-        btn = g["btns"].get(number)
-        if btn:
-            btn.disabled = True
-            btn.label = f"{number}. {ia.user.display_name}"[:80]
-        await ia.response.defer()
-        await self._refresh(g)
-
-    async def _refresh(self, g):
-        e = g["embed"]
-        e.description = f"__**اللاعبين:**__\n{roulette_players_text(g['players'])}"
-        try:
-            await g["m1"].edit(embed=e, view=g["v1"])
-        except Exception:
-            pass
-        try:
-            await g["m2"].edit(view=g["v2"])
-        except Exception:
-            pass
-
-
-class JoinView(View):
-    def __init__(self, gid, game_id, start, end):
-        super().__init__(timeout=None)
-        for num in range(start, end + 1):
-            self.add_item(JoinBtn(gid, game_id, number=num, row=((num - start) // 5)))
-
-
-class ShopOpenBtn(discord.ui.Button):
-    def __init__(self, row=3):
-        super().__init__(label="متجر الخواص 🏪", style=discord.ButtonStyle.primary,
-                         custom_id="open_roulette_shop_btn", row=row)
-        self.number = None
-
-    async def callback(self, ia):
-        view = RouletteShopView(ia.user)
-        embed = view.build_embed()
-        await ia.response.send_message(embed=embed, view=view, ephemeral=True)
-
-
-class KickBtn(discord.ui.Button):
-    def __init__(self, player, row):
-        super().__init__(label=f"{player['number']}. {player['username']}"[:80],
-                         style=discord.ButtonStyle.secondary,
-                         custom_id=f"kick_{player['number']}", row=row)
-        self.player = player
-
-    async def callback(self, ia):
-        if ia.user.id != self.view.winner["id"]:
-            return await ia.response.send_message("❌ | فقط الشخص الذي لديه الدور يمكنه الاختيار", ephemeral=True)
-        self.view.choice = ("kick", self.player["number"])
-        self.view.stop()
-        await ia.response.defer()
-
-
-class RandomKickBtn(discord.ui.Button):
-    def __init__(self, row):
-        super().__init__(label="🎲 طرد عشوائي", style=discord.ButtonStyle.primary,
-                         custom_id="random_kick_btn", row=row)
-
-    async def callback(self, ia):
-        if ia.user.id != self.view.winner["id"]:
-            return await ia.response.send_message("❌ | فقط الشخص الذي لديه الدور يمكنه الاختيار", ephemeral=True)
-        self.view.choice = ("random_kick", None)
-        self.view.stop()
-        await ia.response.defer()
-
-
-class DoubleKickSelect(discord.ui.Select):
-    """قائمة اختيار لاعبين اثنين للطرد الثنائي"""
-    def __init__(self, others):
-        options = [
-            discord.SelectOption(
-                label=f"{p['number']}. {p['username']}"[:100],
-                value=str(p["number"]),
-                description=f"طرد اللاعب رقم {p['number']}"
-            )
-            for p in others[:25]
-        ]
-        super().__init__(
-            placeholder="🎯 اختر لاعبين لطردهم بالطرد الثنائي...",
-            min_values=1,
-            max_values=min(2, len(options)),
-            options=options
-        )
-
-    async def callback(self, ia):
-        if ia.user.id != self.view.winner["id"]:
-            return await ia.response.send_message("❌ | فقط الشخص الذي لديه الدور يمكنه الاختيار", ephemeral=True)
-        nums = [int(v) for v in self.values]
-        self.view.kick_view.choice = ("double_kick_select", nums)
-        self.view.kick_view.stop()
-        self.view.stop()
-        await ia.response.defer()
-
-
-class DoubleKickSelectView(View):
-    """واجهة خاصة بقائمة الطرد الثنائي"""
-    def __init__(self, winner, others, kick_view):
-        super().__init__(timeout=30)
-        self.winner = winner
-        self.kick_view = kick_view
-        self.add_item(DoubleKickSelect(others))
-
-    @discord.ui.button(label="إلغاء الطرد الثنائي ↩️", style=discord.ButtonStyle.secondary, row=1)
-    async def cancel_btn(self, ia, button):
-        if ia.user.id != self.winner["id"]:
-            return await ia.response.send_message("❌ | فقط الشخص الذي لديه الدور يمكنه الاختيار", ephemeral=True)
-        self.stop()
-        await ia.response.defer()
-
-
-class DoubleKickBtn(discord.ui.Button):
-    def __init__(self, winner, others):
-        super().__init__(label="⚡ طرد ثنائي", style=discord.ButtonStyle.success,
-                         custom_id="double_kick_btn", row=4)
-        self.winner = winner
-        self.others = others
-
-    async def callback(self, ia):
-        if ia.user.id != self.view.winner["id"]:
-            return await ia.response.send_message("❌ | فقط الشخص الذي لديه الدور يمكنه الاختيار", ephemeral=True)
-        # Open the double kick selection menu as ephemeral so only the winner sees it
-        dk_view = DoubleKickSelectView(self.winner, self.others, self.view)
-        await ia.response.send_message(
-            f"⚡ **طرد ثنائي** | اختر لاعباً أو لاعبين من القائمة أدناه لطردهم:",
-            view=dk_view,
-            ephemeral=True
-        )
-        await dk_view.wait()
-
-
-class WithdrawBtn(discord.ui.Button):
-    def __init__(self, gid, row):
-        super().__init__(label="انسحاب", style=discord.ButtonStyle.danger,
-                         custom_id=f"withdraw_groulette_{gid}", row=row)
-        self.gid = gid
-
-    async def callback(self, ia):
-        if ia.user.id != self.view.winner["id"]:
-            return await ia.response.send_message("❌ | فقط الشخص الذي لديه الدور يمكنه الاختيار", ephemeral=True)
-        self.view.choice = ("withdraw", None)
-        self.view.stop()
-        await ia.response.defer()
-
-
-class KickView(View):
-    def __init__(self, gid, winner, players):
-        super().__init__(timeout=30)
-        self.gid = gid
-        self.winner = winner
-        self.choice = None
-
-        others = [p for p in players if p["id"] != winner["id"]]
-
-        # Player buttons — rows 0..3 (max 20 players = 4 rows × 5)
-        for i, p in enumerate(others[:20]):
-            self.add_item(KickBtn(p, row=min(i // 5, 3)))
-
-        # Action buttons always in row 4 (bottom row)
-        self.add_item(RandomKickBtn(row=4))
-        self.add_item(WithdrawBtn(gid, row=4))
-
-        # Double kick button shown only if winner owns the item
-        if has_item(winner["id"], "double_kick"):
-            self.add_item(DoubleKickBtn(winner, others))
-
-
-
-@bot.command(name="متجر", aliases=["shop", "المتجر"])
-async def shop_cmd(ctx):
-    """فتح متجر خواص الروليت"""
-    view = RouletteShopView(ctx.author)
-    embed = view.build_embed()
-    await ctx.send(embed=embed, view=view)
-
-
-@bot.command(name="نقاطي", aliases=["points", "النقاط", "تاريخي", "سجلي"])
-async def points_cmd(ctx):
-    """عرض نقاطك ومخزون الخواص والتاريخ الدائم لديك"""
-    u = get_user_data(ctx.author.id)
-    pts = u.get("points", 0)
-    total_pts = u.get("total_points_earned", pts)
-    wins = u.get("total_wins", 0)
-    kicks = u.get("total_kicks", 0)
-    inv = u.get("inventory", {})
-    text = (f"💰 **رصيد النقاط الجاري:** `{pts}` نقطة | 📜 **إجمالي التاريخ:** `{total_pts}` نقطة\n"
-            f"🏆 **الانتصارات الكلية:** `{wins}` | 🎯 **حالات الطرد:** `{kicks}`\n\n"
-            f"📦 **الخواص بالمخزون:**\n"
-            f"• درع ضد الطرد 🛡️: `{inv.get('shield', 0)}`\n"
-            f"• طرد ثنائي ⚡: `{inv.get('double_kick', 0)}`\n"
-            f"• طرد عكسي 🔄: `{inv.get('reverse_kick', 0)}`")
-    await ctx.send(text)
-
-
-@bot.command(name="روليت", aliases=["roulette"])
-async def roulette_cmd(ctx):
-    if not ctx.author.guild_permissions.manage_events:
-        return await ctx.send("❌ | فقط Manga Events يمكنهم قيام بهذا الامر")
-    gid = ctx.channel.id
-    if gid in active_roulettes:
-        old = active_roulettes.get(gid)
-        # تنظيف الجولات العالقة (بدون مشرف تنتهي مهلتها تلقائياً)
-        if old and (time.time() - (old.get("created_at") or 0)) > 600:
-            del active_roulettes[gid]
-        else:
-            return await ctx.send("❌ يوجد جولة تعمل الان بالفعل")
-    if has_active_game(gid):
-        return await ctx.send(f"❌ يوجد لعبة **{get_active_game(gid)}** تعمل في هذا الروم بالفعل!")
-    game_id = int(time.time() * 1000)
-    g = {"id": game_id, "players": [], "btns": {}, "created_at": time.time()}
-    active_roulettes[gid] = g
-    register_game(gid, "roulette")
-
-    e = discord.Embed(title="روليت", color=0xE4F000,
-                      description=f"__**اللاعبين:**__\n{roulette_players_text([])}")
-    e.add_field(name="__طريقة اللاعب:__", value=HOWTO)
-    e.add_field(name="__ستبدأ اللعبة خلال__:",
-                value=f"**<t:{int(time.time() + WAITING_TIME)}:R>**")
-    g["embed"] = e
-
-    v1 = JoinView(gid, game_id, 1, 25)
-    v2 = JoinView(gid, game_id, 26, 40)
-    v2.add_item(JoinBtn(gid, game_id, is_random=True, row=3))
-    v2.add_item(JoinBtn(gid, game_id, is_leave=True, row=3))
-    v2.add_item(ShopOpenBtn(row=3))
-    for v in (v1, v2):
-        for b in v.children:
-            if getattr(b, "number", None) is not None:
-                g["btns"][b.number] = b
-
-    m1 = await ctx.send(embed=e, view=v1)
-    m2 = await ctx.send(view=v2)
-    g["v1"], g["v2"], g["m1"], g["m2"] = v1, v2, m1, m2
-
-    end_time = time.time() + WAITING_TIME
-    while time.time() < end_time:
-        if gid not in active_roulettes:
-            return await ctx.send("❌ | تم إيقاف الجولة بواسطة المسؤولين")
-        remaining = int(end_time - time.time())
-        e.set_field_at(1, name="__ستبدأ اللعبة خلال__:", value=f"**{remaining} ثانية**")
-        try:
-            await m1.edit(embed=e)
-        except Exception:
-            pass
-        await asyncio.sleep(1)
-
-    if gid not in active_roulettes:
-        return await ctx.send("❌ | تم إيقاف الجولة بواسطة المسؤولين")
-    for v in (v1, v2):
-        for b in v.children:
-            b.disabled = True
-    e.color = 0x0FF000
-    e.clear_fields()
-    e.add_field(name="__طريقة اللاعب:__", value=HOWTO)
-    try:
-        await m1.edit(embed=e, view=v1)
-        await m2.edit(view=v2)
-    except Exception:
-        pass
-
-    if len(g["players"]) < 3:
-        await ctx.send("🚫 | تم إلغاء اللعبة لعدم وجود 3 لاعبين على الأقل")
-        del active_roulettes[gid]
-        return
-    await ctx.send("✅ | تم توزيع الأرقام على كل لاعب. ستبدأ الجولة الأولى في بضع ثواني...")
-    try:
-        await run_game(ctx, gid)
-    finally:
-        # ضمان تنظيف حالة اللعبة حتى لو حدث خطأ
-        active_roulettes.pop(gid, None)
-        unregister_game(gid)
 
 
 @bot.command(name="توقف", aliases=["stop", "_توقف"])
@@ -865,9 +520,15 @@ async def end_any_game(ctx):
     except Exception:
         pass
 
+    try:
+        r_cog = bot.get_cog("RouletteCog")
+        if r_cog and r_cog.is_game_active(cid):
+            await r_cog.stop_game(cid, ctx.author)
+    except Exception:
+        pass
+
     # 2. تنظيف جميع السجلات لضمان إزالة اللعبة نهائياً
     active_all_games.pop(cid, None)
-    active_roulettes.pop(cid, None)
     try:
         from basra_cog import active_basra_games
         active_basra_games.pop(cid, None)
@@ -929,134 +590,6 @@ async def games_cmd(ctx):
     embed.set_footer(text="استمتعوا باللعب والتنافس! 🎲")
     await ctx.send(embed=embed)
 
-
-async def run_game(ctx, gid):
-    if gid not in active_roulettes:
-        return await ctx.send("❌ | تم إيقاف الجولة بواسطة المسؤولين")
-    g = active_roulettes[gid]
-    players = sorted(g["players"], key=lambda p: p["number"])
-    random.shuffle(players)
-    winner = players[-1]
-
-    for p in players:
-        if "avimg" not in p:
-            p["avimg"] = await download_avatar(p.get("avatarURL"))
-
-    img_file = await make_gif([{"number": p["number"], "img": p.get("avimg")} for p in players],
-                             highlight=len(players) - 1)
-    content = f"**{winner['number']}** - <@{winner['id']}>"
-    if len(players) <= 2:
-        content += "\n:crown: **هذه الجولة الأخيرة ! اللاعب المختار هو اللاعب الفائز في اللعبة.**"
-    await ctx.send(content=content, file=discord.File(img_file, filename="roulette.png"))
-
-    if len(players) <= 2:
-        winner_pts = record_win(winner["id"])
-        await ctx.send(f":crown: - **فاز <@{winner['id']}> في اللعبة وحصل على 3 نقاط! 🎉 (إجمالي نقاطه: {winner_pts})**")
-        del active_roulettes[gid]
-        return
-
-    view = KickView(gid, winner, players)
-    msg = await ctx.send(f"<@{winner['id']}> لديك **30 ثانية** لإختيار لاعب لطرده", view=view)
-    await view.wait()
-
-    if gid not in active_roulettes:
-        return await ctx.send("❌ | تم إيقاف الجولة بواسطة المسؤولين")
-    for b in view.children:
-        b.disabled = True
-    try:
-        await msg.edit(view=view)
-    except Exception:
-        pass
-
-    choice = view.choice
-    others = [p for p in players if p["id"] != winner["id"]]
-
-    if choice:
-        c_type, c_val = choice
-        if c_type in ("kick", "random_kick"):
-            is_random = (c_type == "random_kick")
-            if c_type == "kick":
-                victim = next((p for p in players if p["number"] == c_val), None)
-            else:
-                victim = random.choice(others) if others else None
-
-            if not victim:
-                await ctx.send(f"💣 | تم طرد <@{winner['id']}> من اللعبة لعدم تفاعله ، سيتم بدء الجولة القادمة في بضع ثواني...")
-                g["players"] = [p for p in g["players"] if p["id"] != winner["id"]]
-                return await run_game(ctx, gid)
-
-            # Check Target for Reverse Kick
-            if use_item(victim["id"], "reverse_kick"):
-                v_pts = record_kick(victim["id"])
-                kick_str = " عشوائياً" if is_random else ""
-                await ctx.send(f"🔄 **طرد عكسي!** حاول <@{winner['id']}> طرد <@{victim['id']}>{kick_str}، لكن <@{victim['id']}> يمتلك خاصية **الطرد العكسي 🔄**!\n"
-                               f"انعكست الضربة وطُرد المعتدي <@{winner['id']}> من اللعبة! وحصل <@{victim['id']}> على **+1 نقطة** 🎯 (نقاطه: {v_pts})")
-                g["players"] = [p for p in g["players"] if p["id"] != winner["id"]]
-                return await run_game(ctx, gid)
-
-            # Check Target for Shield
-            elif use_item(victim["id"], "shield"):
-                kick_str = " عشوائياً" if is_random else ""
-                await ctx.send(f"🛡️ **درع ضد الطرد!** حاول <@{winner['id']}> طرد <@{victim['id']}>{kick_str}، لكن **الدرع 🛡️** حمى <@{victim['id']}> وتم تدمير الدرع!\n"
-                               f"نجا <@{victim['id']}> وتستمر اللعبة بدون أي طرد هذه الجولة.")
-                return await run_game(ctx, gid)
-
-            else:
-                kicker_pts = record_kick(winner["id"])
-                if is_random:
-                    await ctx.send(f"🎲 | **طرد عشوائي!** تم طرد <@{victim['id']}> من اللعبة عشوائياً وحصل <@{winner['id']}> على **+1 نقطة** 🎯 (نقاطه: {kicker_pts}) ، سيتم بدء الجولة القادمة في بضع ثواني...")
-                else:
-                    await ctx.send(f"💣 | تم طرد <@{victim['id']}> من اللعبة وحصل <@{winner['id']}> على **+1 نقطة** 🎯 (نقاطه: {kicker_pts}) ، سيتم بدء الجولة القادمة في بضع ثواني...")
-                g["players"] = [p for p in g["players"] if p["id"] != victim["id"]]
-                return await run_game(ctx, gid)
-
-        elif c_type in ("double_kick", "double_kick_select"):
-            if use_item(winner["id"], "double_kick"):
-                # double_kick_select = user manually chose targets (list of numbers)
-                # double_kick = fallback (shouldn't happen anymore but kept for safety)
-                if c_type == "double_kick_select" and c_val:
-                    targets = [p for p in players if p["number"] in c_val]
-                else:
-                    targets = random.sample(others, min(2, len(others))) if others else []
-
-                kicked_names = []
-                pts_earned = 0
-                for victim in targets:
-                    # Check reverse kick first
-                    if use_item(victim["id"], "reverse_kick"):
-                        v_pts = add_points(victim["id"], 1)
-                        kicked_names.append(f"<@{victim['id']}> (🔄 ردّ الضربة!)")
-                        g["players"] = [p for p in g["players"] if p["id"] != winner["id"]]
-                        await ctx.send(
-                            f"🔄 **طرد عكسي!** حاول <@{winner['id']}> طرد <@{victim['id']}> بالطرد الثنائي، "
-                            f"لكن **الطرد العكسي 🔄** أنقذه وطرد المهاجم بدلاً منه! وحصل <@{victim['id']}> على **+1 نقطة** (نقاطه: {v_pts})"
-                        )
-                        return await run_game(ctx, gid)
-                    # Check shield
-                    elif use_item(victim["id"], "shield"):
-                        kicked_names.append(f"<@{victim['id']}> (نجا بالدرع 🛡️)")
-                    else:
-                        g["players"] = [p for p in g["players"] if p["id"] != victim["id"]]
-                        kicked_names.append(f"<@{victim['id']}>")
-                        pts_earned += 1
-
-                kicker_pts = add_points(winner["id"], pts_earned)
-                t_str = " و ".join(kicked_names) if kicked_names else "لا أحد"
-                await ctx.send(
-                    f"⚡ **طرد ثنائي!** استخدم <@{winner['id']}> خاصية الطرد الثنائي واستهدف: {t_str}!\n"
-                    f"حصل <@{winner['id']}> على **+{pts_earned} نقاط** 🎯 (إجمالي نقاطه: {kicker_pts})."
-                )
-                return await run_game(ctx, gid)
-
-
-        elif c_type == "withdraw":
-            await ctx.send(f"💣 | لقد انسحب <@{winner['id']}> من اللعبة ، سيتم بدء الجولة القادمة في بضع ثواني...")
-            g["players"] = [p for p in g["players"] if p["id"] != winner["id"]]
-            return await run_game(ctx, gid)
-
-    await ctx.send(f"💣 | تم طرد <@{winner['id']}> من اللعبة لعدم تفاعله ، سيتم بدء الجولة القادمة في بضع ثواني...")
-    g["players"] = [p for p in g["players"] if p["id"] != winner["id"]]
-    await run_game(ctx, gid)
 
 # ------------------------------------------------------------------------------
 # تشغيل البوت

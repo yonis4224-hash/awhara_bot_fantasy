@@ -21,5 +21,16 @@
     "total_wins": 4,
     "total_kicks": 4,
     "inventory": {}
+  },
+  "888111222": {
+    "points": 164,
+    "total_points_earned": 200,
+    "total_wins": 0,
+    "total_kicks": 0,
+    "inventory": {
+      "shield": 0,
+      "double_kick": 0,
+      "reverse_kick": 0
+    }
   }
 }
