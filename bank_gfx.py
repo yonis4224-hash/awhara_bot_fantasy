@@ -1,64 +1,147 @@
 """
 Bank Al-Haz Graphics Generator (bank_gfx.py)
-Generates dynamic PIL images for Bank Al-Haz (Monopoly) game board and status displays.
+Generates high-definition, professional board graphics using the luxury AI-generated
+board template, with crystal-clear Arabic calligraphy, large fonts, and vibrant UI badges.
 """
+
+import os
 import io
+import re
 import math
+import arabic_reshaper
+from bidi.algorithm import get_display
 from PIL import Image, ImageDraw, ImageFont
 
 # Board Color Palette
-BG_COLOR = (24, 32, 28)          # Dark sleek felt background
-BOARD_BG = (235, 240, 232)        # Cream light board surface
-BORDER_COLOR = (40, 50, 45)      # Dark tile borders
-TEXT_COLOR = (20, 25, 22)
-GOLD_COLOR = (245, 190, 45)
+BG_COLOR = (15, 20, 18)
+GOLD_COLOR = (245, 195, 55)
+GOLD_LIGHT = (255, 230, 140)
+WHITE = (255, 255, 255)
+DARK_TEXT = (20, 22, 25)
 
 PLAYER_COLORS = [
-    (220, 40, 40),    # Red (P1)
-    (30, 120, 220),   # Blue (P2)
-    (40, 180, 70),    # Green (P3)
-    (230, 160, 20)    # Yellow (P4)
+    (225, 45, 45),    # Red (P1)
+    (35, 135, 245),   # Blue (P2)
+    (45, 185, 75),    # Green (P3)
+    (245, 175, 25)    # Yellow (P4)
 ]
 
 PLAYER_EMOJIS = ['🔴', '🔵', '🟢', '🟡']
 
 GROUP_COLORS = {
-    'brown': (140, 80, 40),
-    'cyan': (100, 200, 230),
-    'pink': (220, 100, 170),
-    'orange': (240, 140, 30),
-    'red': (220, 50, 50),
-    'yellow': (240, 210, 40),
-    'green': (50, 160, 70),
-    'blue': (40, 90, 200),
-    'special': (180, 190, 195)
+    'brown': (150, 90, 50),
+    'cyan': (30, 175, 225),
+    'pink': (225, 85, 155),
+    'orange': (240, 125, 25),
+    'red': (225, 45, 45),
+    'yellow': (235, 195, 30),
+    'green': (45, 175, 80),
+    'blue': (25, 105, 225),
+    'special': (75, 85, 95)
 }
 
-def get_font(size):
-    try:
-        return ImageFont.truetype("arial.ttf", size)
-    except Exception:
-        try:
-            return ImageFont.truetype("DejaVuSans.ttf", size)
-        except Exception:
-            return ImageFont.load_default()
+# Regex to strip all emojis and non-standard symbols that cause square tofu boxes []
+EMOJI_PATTERN = re.compile(
+    '['
+    '\U00010000-\U0010ffff'
+    '\u2600-\u27BF'
+    '\u2B50-\u2B55'
+    '\u23E9-\u23FA'
+    '\u25AA-\u25FE'
+    '\uFE00-\uFE0F'
+    '\u200D'
+    ']+', flags=re.UNICODE
+)
 
-def _get_tile_rect(tile_idx, W=750, H=750, pad=30):
+def clean_arabic(text):
+    """Strips emojis, markdown and unsupported symbols that cause tofu boxes in Arabic TTF fonts."""
+    if not text:
+        return ""
+    # Strip markdown formatting
+    cleaned = re.sub(r'[*_`~#]', '', str(text))
+    # Replace slash with ' من '
+    cleaned = cleaned.replace('/', ' من ')
+    # Replace parentheses, brackets, and math symbols with spaces/hyphens
+    cleaned = re.sub(r'[()\[\]{}+=]', ' ', cleaned)
+    # Strip emojis and variation selectors
+    cleaned = EMOJI_PATTERN.sub('', cleaned)
+    # Clean up multiple spaces
+    cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+    return cleaned
+
+def ar(text):
+    """Cleans emojis, reshapes and reorders Arabic text for flawless RTL visual rendering."""
+    if not text:
+        return ""
+    cleaned = clean_arabic(text)
+    if not cleaned:
+        return ""
+    try:
+        reshaped = arabic_reshaper.reshape(cleaned)
+        return get_display(reshaped)
+    except Exception:
+        return cleaned
+
+def _find_font(font_name):
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    candidates = [
+        os.path.join(base_dir, "fonts", font_name),
+        os.path.join("fonts", font_name),
+        os.path.join(base_dir, "..", "fonts", font_name),
+        font_name,
+    ]
+    for c in candidates:
+        if os.path.exists(c):
+            return c
+    return None
+
+def get_ar_font(size):
+    """Prioritizes NotoSansArabic-Bold which has 100% full Arabic Presentation Forms coverage."""
+    p = _find_font("NotoSansArabic-Bold.ttf")
+    if p:
+        try:
+            return ImageFont.truetype(p, size)
+        except Exception:
+            pass
+    # System fallbacks
+    for sys_font in [r"C:\Windows\Fonts\arialbd.ttf", r"C:\Windows\Fonts\tahoma.ttf", "arial.ttf", "DejaVuSans.ttf"]:
+        try:
+            return ImageFont.truetype(sys_font, size)
+        except Exception:
+            pass
+    return ImageFont.load_default()
+
+def get_latin_font(size):
+    """Loads clean Latin/number font for badges, player indices, and levels."""
+    p = _find_font("NotoSans-Bold.ttf")
+    if p:
+        try:
+            return ImageFont.truetype(p, size)
+        except Exception:
+            pass
+    for sys_font in [r"C:\Windows\Fonts\arialbd.ttf", r"C:\Windows\Fonts\tahoma.ttf", "arial.ttf", "DejaVuSans.ttf"]:
+        try:
+            return ImageFont.truetype(sys_font, size)
+        except Exception:
+            pass
+    return ImageFont.load_default()
+
+# Exact slot bounding coordinates for the 7x7 grid in the 1024x1024 luxury template
+COL_X = [(51, 202), (226, 323), (345, 441), (464, 560), (582, 679), (701, 798), (822, 973)]
+ROW_Y = [(51, 203), (227, 324), (346, 444), (465, 563), (584, 682), (702, 800), (821, 973)]
+
+def _get_tile_rect(tile_idx):
     """
-    Computes coordinates for 24 perimeter tiles around a 7x7 grid.
-    0: Bottom-Right corner
+    Computes coordinates for 24 perimeter tiles around the 7x7 grid.
+    0: Bottom-Right corner (Start)
     1..5: Bottom edge (Right to Left)
-    6: Bottom-Left corner
+    6: Bottom-Left corner (Jail)
     7..11: Left edge (Bottom to Top)
-    12: Top-Left corner
+    12: Top-Left corner (Free Parking)
     13..17: Top edge (Left to Right)
-    18: Top-Right corner
+    18: Top-Right corner (Go to Jail)
     19..23: Right edge (Top to Bottom)
     """
-    grid_w = (W - 2 * pad) // 7
-    grid_h = (H - 2 * pad) // 7
-
-    # Calculate (col, row) on 7x7 grid (0..6, 0..6)
     if tile_idx == 0:
         c, r = 6, 6
     elif 1 <= tile_idx <= 5:
@@ -76,79 +159,151 @@ def _get_tile_rect(tile_idx, W=750, H=750, pad=30):
     else:  # 19..23
         c, r = 6, tile_idx - 18
 
-    x1 = pad + c * grid_w
-    y1 = pad + r * grid_h
-    x2 = x1 + grid_w
-    y2 = y1 + grid_h
-    return x1, y1, x2, y2
+    x1, x2 = COL_X[c]
+    y1, y2 = ROW_Y[r]
+    return x1, y1, x2, y2, c, r
+
+def _draw_shadow_text(draw, pos, text, font, fill=WHITE, shadow_color=(0, 0, 0, 240), shadow_offset=1):
+    x, y = pos
+    if shadow_offset > 0:
+        for ox in range(-shadow_offset, shadow_offset + 1):
+            for oy in range(-shadow_offset, shadow_offset + 1):
+                if ox != 0 or oy != 0:
+                    draw.text((x + ox, y + oy), text, fill=shadow_color, font=font)
+    draw.text((x, y), text, fill=fill, font=font)
+
+def _center_text(draw, cx, cy, text, font, fill=WHITE, shadow_offset=1):
+    bbox = draw.textbbox((0, 0), text, font=font)
+    w = bbox[2] - bbox[0]
+    h = bbox[3] - bbox[1]
+    _draw_shadow_text(draw, (cx - w / 2, cy - h / 2), text, font, fill=fill, shadow_offset=shadow_offset)
+
+def _draw_star(draw, cx, cy, r_outer=5, r_inner=2.5, fill=GOLD_COLOR):
+    points = []
+    for i in range(10):
+        r = r_outer if i % 2 == 0 else r_inner
+        ang = i * math.pi / 5 - math.pi / 2
+        points.append((cx + r * math.cos(ang), cy + r * math.sin(ang)))
+    draw.polygon(points, fill=fill)
+
+def _load_template():
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    paths = [
+        os.path.join(base_dir, "assets", "bank_board_template.jpg"),
+        os.path.join(base_dir, "bank_board_template.jpg"),
+        os.path.join("assets", "bank_board_template.jpg"),
+        "bank_board_template.jpg",
+        os.path.join(base_dir, "..", "assets", "bank_board_template.jpg"),
+    ]
+    for p in paths:
+        if os.path.exists(p):
+            try:
+                return Image.open(p).convert("RGBA").resize((1024, 1024), Image.LANCZOS)
+            except Exception:
+                pass
+    fallback = Image.new("RGBA", (1024, 1024), (20, 26, 23))
+    fdraw = ImageDraw.Draw(fallback)
+    fdraw.rectangle([45, 45, 979, 979], outline=GOLD_COLOR, width=4)
+    fdraw.rectangle([210, 210, 814, 814], fill=(22, 45, 34), outline=(60, 95, 75), width=3)
+    return fallback
 
 def render_board(tiles, players, current_turn_idx, last_dice=(0, 0), log_msg=""):
     """
-    Renders full game board image with player positions, owned properties, houses, and status box.
+    Renders the luxury Bank Al-Haz board with high-definition typography,
+    clear property values, player pawns, and central HUD.
     """
-    W, H = 760, 760
-    img = Image.new("RGBA", (W, H), BG_COLOR)
-    draw = ImageDraw.Draw(img)
+    board_img = _load_template()
+    draw = ImageDraw.Draw(board_img, "RGBA")
 
-    pad = 30
-    grid_w = (W - 2 * pad) // 7
-    grid_h = (H - 2 * pad) // 7
+    # Font definitions with large, legible sizes
+    font_corner = get_ar_font(21)
+    font_city_title = get_ar_font(18)
+    font_city_title_small = get_ar_font(15)
+    font_price = get_ar_font(16)
+    font_owner_badge = get_latin_font(13)
+    font_pawn = get_latin_font(14)
 
-    # Draw Center Board Felt Background
-    center_x1 = pad + grid_w
-    center_y1 = pad + grid_h
-    center_x2 = pad + 6 * grid_w
-    center_y2 = pad + 6 * grid_h
-    draw.rectangle([center_x1, center_y1, center_x2, center_y2], fill=(30, 42, 35), outline=(50, 75, 60), width=3)
-
-    font_tile_title = get_font(12)
-    font_sub = get_font(10)
-    font_center_title = get_font(22)
-    font_center_body = get_font(14)
+    font_main_title = get_ar_font(35)
+    font_sub_title = get_ar_font(17)
+    font_dice = get_ar_font(21)
+    font_turn = get_ar_font(21)
+    font_hud_header = get_ar_font(18)
+    font_balance = get_ar_font(15)
+    font_log = get_ar_font(14)
 
     # 1. Render All 24 Perimeter Tiles
     for i, t in enumerate(tiles):
-        x1, y1, x2, y2 = _get_tile_rect(i, W, H, pad)
+        x1, y1, x2, y2, c, r = _get_tile_rect(i)
         tw = x2 - x1
         th = y2 - y1
-
-        # Tile Background
+        cx = x1 + tw // 2
+        cy = y1 + th // 2
         is_corner = (i in [0, 6, 12, 18])
-        bg = (245, 248, 240) if not is_corner else (225, 235, 220)
-        draw.rectangle([x1, y1, x2, y2], fill=bg, outline=BORDER_COLOR, width=2)
+        t_group = t.get('group', 'special')
+        t_price = t.get('price', 0)
+        t_name = clean_arabic(t.get('name', ''))
 
         # Property Color Header Banner (if city)
-        group_col = GROUP_COLORS.get(t.get('group', 'special'), (180, 190, 195))
-        if not is_corner and t.get('group') != 'special':
-            header_h = 22
-            # Determine header position depending on board edge
-            if y1 < center_y1:  # Top edge
-                draw.rectangle([x1 + 1, y2 - header_h, x2 - 1, y2 - 1], fill=group_col)
-            elif y2 > center_y2:  # Bottom edge
-                draw.rectangle([x1 + 1, y1 + 1, x2 - 1, y1 + header_h], fill=group_col)
-            elif x1 < center_x1:  # Left edge
-                draw.rectangle([x2 - header_h, y1 + 1, x2 - 1, y2 - 1], fill=group_col)
-            else:  # Right edge
-                draw.rectangle([x1 + 1, y1 + 1, x1 + header_h, y2 - 1], fill=group_col)
+        if not is_corner and t_group != 'special':
+            g_color = GROUP_COLORS.get(t_group, (75, 85, 95))
+            banner_h = 20 if tw > th else 22
+            draw.rounded_rectangle([x1 + 3, y1 + 3, x2 - 3, y1 + banner_h], radius=4, fill=g_color)
+            draw.line([x1 + 3, y1 + banner_h, x2 - 3, y1 + banner_h], fill=GOLD_COLOR, width=1)
 
-        # Tile Name & Price
-        tname = t.get('name', '')
-        tprice = t.get('price', 0)
-        draw.text((x1 + 6, y1 + 6), tname[:10], fill=TEXT_COLOR, font=font_tile_title)
-        if tprice > 0:
-            draw.text((x1 + 6, y1 + 24), f"{tprice}ج", fill=(80, 90, 85), font=font_sub)
+        # Draw Tile Text
+        if is_corner:
+            _center_text(draw, cx, cy - 20, ar(t_name), font_corner, fill=GOLD_LIGHT, shadow_offset=2)
+            if i == 0:
+                _center_text(draw, cx, cy + 18, ar("مكافأة 200 جنيه"), font_price, fill=GOLD_COLOR)
+            elif i == 6:
+                _center_text(draw, cx, cy + 18, ar("كفالة: 50 ج"), font_price, fill=(240, 120, 120))
+            elif i == 18:
+                _center_text(draw, cx, cy + 18, ar("مباشرة"), font_price, fill=(255, 100, 100))
+            elif i == 12:
+                _center_text(draw, cx, cy + 18, ar("استراحة"), font_price, fill=(180, 230, 200))
+        else:
+            is_vert_slot = (th > tw)
+            name_y = y1 + 38 if is_vert_slot else y1 + 30
+            words = t_name.split()
 
-        # Owner Indicator Badge
+            if is_vert_slot and len(words) >= 2 and len(t_name) > 8:
+                w1 = ar(words[0])
+                w2 = ar(" ".join(words[1:]))
+                _center_text(draw, cx, name_y, w1, font_city_title_small, fill=WHITE, shadow_offset=1)
+                _center_text(draw, cx, name_y + 18, w2, font_city_title_small, fill=WHITE, shadow_offset=1)
+            else:
+                _center_text(draw, cx, name_y, ar(t_name), font_city_title, fill=WHITE, shadow_offset=2)
+
+            # Price / Info Label
+            price_y = y2 - 20
+            pb_w = 66
+            pb_h = 22
+            if t_price > 0:
+                price_str = f"{t_price} ج"
+                draw.rounded_rectangle([cx - pb_w // 2, price_y - pb_h // 2, cx + pb_w // 2, price_y + pb_h // 2], radius=4, fill=(15, 20, 25, 230), outline=GOLD_COLOR, width=1)
+                _center_text(draw, cx, price_y, ar(price_str), font_price, fill=GOLD_COLOR, shadow_offset=1)
+            elif t_group == 'special':
+                if "حظ" in t_name:
+                    _center_text(draw, cx, price_y, ar("فرصة"), font_price, fill=(210, 180, 255))
+                elif "ضريبة" in t_name:
+                    _center_text(draw, cx, price_y, ar("خصم 100 ج"), font_price, fill=(255, 130, 130))
+
+        # Owner Badge & Houses/Hotels Level
         owner_idx = t.get('owner')
         if owner_idx is not None and 0 <= owner_idx < len(PLAYER_COLORS):
             owner_col = PLAYER_COLORS[owner_idx]
-            draw.rectangle([x1 + tw - 16, y1 + 4, x1 + tw - 4, y1 + 16], fill=owner_col, outline=(255, 255, 255))
-            level = t.get('level', 0)
-            if level > 0:
-                draw.text((x1 + tw - 14, y1 + 4), f"{level}", fill=(255, 255, 255), font=font_sub)
+            badge_w, badge_h = 24, 18
+            bx1 = x2 - badge_w - 4
+            by1 = y1 + 4
+            draw.rounded_rectangle([bx1, by1, bx1 + badge_w, by1 + badge_h], radius=4, fill=owner_col, outline=WHITE, width=1)
+            _center_text(draw, bx1 + badge_w // 2, by1 + badge_h // 2, f"P{owner_idx+1}", font_owner_badge, fill=WHITE)
 
-    # 2. Render Player Tokens on Tiles
-    # Group players by position
+            # Property Upgrade Stars
+            level = t.get('level', 0)
+            for s_idx in range(level):
+                _draw_star(draw, x1 + 10 + s_idx * 11, y1 + 12, r_outer=4.5, r_inner=2.2, fill=GOLD_COLOR)
+
+    # 2. Render Player Pawns on Tiles
     tile_players = {}
     for p_idx, p in enumerate(players):
         if p.get('bankrupt', False):
@@ -157,70 +312,134 @@ def render_board(tiles, players, current_turn_idx, last_dice=(0, 0), log_msg="")
         tile_players.setdefault(pos, []).append(p_idx)
 
     for pos, p_indices in tile_players.items():
-        x1, y1, x2, y2 = _get_tile_rect(pos, W, H, pad)
+        x1, y1, x2, y2, c, r = _get_tile_rect(pos)
         tw = x2 - x1
         th = y2 - y1
+        cx = x1 + tw // 2
+        is_corner = (pos in [0, 6, 12, 18])
+        is_vert_slot = (th > tw)
 
-        for idx_in_tile, p_idx in enumerate(p_indices):
+        pawn_r = 11
+        num_p = len(p_indices)
+
+        for idx, p_idx in enumerate(p_indices):
             col = PLAYER_COLORS[p_idx]
-            # Offset tokens nicely if multiple players are on the same tile
-            ox = (idx_in_tile % 2) * 18 + 10
-            oy = (idx_in_tile // 2) * 18 + (th - 28)
-            px = x1 + ox
-            py = y1 + oy
+            if is_corner:
+                px = cx - (num_p - 1) * 14 + idx * 28
+                py = y2 - 28
+            elif is_vert_slot:
+                px = cx - (num_p - 1) * 14 + idx * 28
+                py = y1 + 92
+            else:
+                px = cx - (num_p - 1) * 15 + idx * 30
+                py = y1 + 54
 
-            draw.ellipse([px, py, px + 16, py + 16], fill=col, outline=(255, 255, 255), width=2)
-            draw.text((px + 4, py + 2), str(p_idx + 1), fill=(255, 255, 255), font=font_sub)
+            # Pawn shadow & 3D body
+            draw.ellipse([px - pawn_r + 2, py - pawn_r + 2, px + pawn_r + 2, py + pawn_r + 2], fill=(0, 0, 0, 160))
+            draw.ellipse([px - pawn_r, py - pawn_r, px + pawn_r, py + pawn_r], fill=col, outline=WHITE, width=2)
+            _center_text(draw, px, py, str(p_idx + 1), font_pawn, fill=WHITE, shadow_offset=1)
 
-    # 3. Center Status Panel (Dice, Turn, Balances)
-    cx_start = center_x1 + 15
-    cy_start = center_y1 + 15
-    cx_w = (center_x2 - center_x1) - 30
-    cy_h = (center_y2 - center_y1) - 30
+    # 3. Center Area Rendering
+    center_cx = 512
 
-    # Title
-    draw.text((cx_start + 110, cy_start + 10), "🏰 بنك الحظ", fill=GOLD_COLOR, font=font_center_title)
+    # A. Upper Title
+    _center_text(draw, center_cx, 260, ar("بنك الحظ الملكي"), font_main_title, fill=GOLD_COLOR, shadow_offset=3)
+    _center_text(draw, center_cx, 305, ar("لعبة التجارة والاستثمار الكبرى"), font_sub_title, fill=GOLD_LIGHT, shadow_offset=1)
 
-    # Last Dice Roll
+    # B. Inside Golden Cartouche
+    cart_top = 405
+    cart_bottom = 615
+    cart_left = 405
+    cart_right = 619
+
+    # Semi-transparent dark velvet glass inside the cartouche
+    draw.rounded_rectangle([cart_left, cart_top, cart_right, cart_bottom], radius=14, fill=(12, 22, 18, 225), outline=(218, 165, 32), width=2)
+
+    # Dice Roll Display
     d1, d2 = last_dice
-    dice_str = f"🎲 النرد: {d1} + {d2} = {d1 + d2}" if (d1 > 0 and d2 > 0) else "🎲 ارمِ النرد لبدء الجولة"
-    draw.text((cx_start + 90, cy_start + 45), dice_str, fill=(230, 240, 235), font=font_center_body)
+    if d1 > 0 and d2 > 0:
+        dice_text = f"النرد: {d1} و {d2} - المجموع {d1 + d2}"
+    else:
+        dice_text = "ارمِ النرد للانطلاق!"
+    _center_text(draw, center_cx, cart_top + 45, ar(dice_text), font_dice, fill=GOLD_COLOR, shadow_offset=2)
 
-    # Turn Indicator
+    # Current Turn Banner
     if 0 <= current_turn_idx < len(players):
         curr_p = players[current_turn_idx]
         p_name = curr_p.get('name', f'لاعب {current_turn_idx+1}')
         p_col = PLAYER_COLORS[current_turn_idx]
-        draw.rounded_rectangle([cx_start + 30, cy_start + 75, cx_start + cx_w - 30, cy_start + 110], radius=8, fill=(40, 60, 50), outline=p_col, width=2)
-        draw.text((cx_start + 45, cy_start + 83), f"👉 دور: {p_name[:14]}", fill=GOLD_COLOR, font=font_center_body)
 
-    # Player Balances Table
-    bal_y = cy_start + 125
-    draw.line([cx_start + 20, bal_y, cx_start + cx_w - 20, bal_y], fill=(70, 95, 80), width=1)
-    bal_y += 10
-    draw.text((cx_start + 20, bal_y), "💰 أرصدة اللاعبين:", fill=(200, 220, 210), font=get_font(13))
-    bal_y += 22
+        turn_pill_w = 190
+        turn_pill_h = 42
+        turn_y = cart_top + 105
+        draw.rounded_rectangle([center_cx - turn_pill_w // 2, turn_y - turn_pill_h // 2, center_cx + turn_pill_w // 2, turn_y + turn_pill_h // 2], radius=8, fill=(25, 35, 30), outline=p_col, width=2)
+        # Indicator dot
+        draw.ellipse([center_cx - turn_pill_w // 2 + 10, turn_y - 8, center_cx - turn_pill_w // 2 + 26, turn_y + 8], fill=p_col, outline=WHITE)
+        _center_text(draw, center_cx + 12, turn_y, ar(f"دور: {p_name[:10]}"), font_turn, fill=WHITE, shadow_offset=1)
 
-    for p_idx, p in enumerate(players):
+        # Current tile destination info
+        curr_pos = curr_p.get('position', 0)
+        dest_tile = tiles[curr_pos] if curr_pos < len(tiles) else None
+        if dest_tile:
+            dest_name = clean_arabic(dest_tile.get('name', ''))
+            _center_text(draw, center_cx, cart_top + 160, ar(f"المكان: {dest_name}"), font_sub_title, fill=GOLD_LIGHT, shadow_offset=1)
+
+    # C. Lower Panel (Balances and Log)
+    panel_y1 = 678
+    panel_y2 = 808
+    panel_w = 440
+    panel_x1 = center_cx - panel_w // 2
+    panel_x2 = center_cx + panel_w // 2
+
+    draw.rounded_rectangle([panel_x1, panel_y1, panel_x2, panel_y2], radius=10, fill=(14, 20, 18, 240), outline=(180, 150, 40), width=2)
+
+    # Balances Header
+    _center_text(draw, center_cx, panel_y1 + 18, ar("أرصدة المتسابقين"), font_hud_header, fill=GOLD_COLOR, shadow_offset=1)
+
+    # 4 Players 2-Column Table
+    row1_y = panel_y1 + 46
+    row2_y = panel_y1 + 72
+    col1_x = panel_x1 + 115
+    col2_x = panel_x1 + 325
+
+    coords = [
+        (col1_x, row1_y),
+        (col2_x, row1_y),
+        (col1_x, row2_y),
+        (col2_x, row2_y),
+    ]
+
+    for p_idx, p in enumerate(players[:4]):
         p_name = p.get('name', f'لاعب {p_idx+1}')
         p_bal = p.get('balance', 0)
         is_bankrupt = p.get('bankrupt', False)
         is_jail = p.get('in_jail', False)
-
         p_col = PLAYER_COLORS[p_idx]
-        status = " (مفلس)" if is_bankrupt else (" (في السجن 🚓)" if is_jail else "")
-        bal_text = f"P{p_idx+1}: {p_name[:10]} ➔ {p_bal}ج{status}"
-        
-        draw.ellipse([cx_start + 20, bal_y + 3, cx_start + 30, bal_y + 13], fill=p_col)
-        draw.text((cx_start + 36, bal_y), bal_text, fill=(240, 245, 240) if not is_bankrupt else (160, 160, 160), font=font_sub)
-        bal_y += 20
+        px, py = coords[p_idx]
 
-    # Recent Log Banner
+        # Player color pill with number
+        draw.ellipse([px - 85, py - 6, px - 71, py + 8], fill=p_col, outline=WHITE)
+        _center_text(draw, px - 78, py + 1, str(p_idx + 1), font_pawn, fill=WHITE)
+
+        if is_bankrupt:
+            entry_text = f"{p_name[:8]}: مفلس"
+            text_col = (150, 150, 150)
+        elif is_jail:
+            entry_text = f"{p_name[:8]}: {p_bal} ج - سجن"
+            text_col = (255, 140, 140)
+        else:
+            entry_text = f"{p_name[:8]}: {p_bal} جنيه"
+            text_col = WHITE
+
+        _draw_shadow_text(draw, (px - 62, py - 9), ar(entry_text), font_balance, fill=text_col)
+
+    # Event Log Ticker at bottom of panel
     if log_msg:
-        draw.rounded_rectangle([cx_start + 15, cy_start + cy_h - 45, cx_start + cx_w - 15, cy_start + cy_h - 10], radius=6, fill=(15, 25, 20, 230), outline=GOLD_COLOR, width=1)
-        draw.text((cx_start + 25, cy_start + cy_h - 38), f"📢 {log_msg[:38]}", fill=(255, 255, 255), font=font_sub)
+        draw.line([panel_x1 + 15, panel_y1 + 95, panel_x2 - 15, panel_y1 + 95], fill=(60, 80, 70), width=1)
+        _center_text(draw, center_cx, panel_y1 + 104, ar(f"آخر حدث: {clean_arabic(log_msg)[:44]}"), font_log, fill=GOLD_LIGHT, shadow_offset=1)
 
+    # Export to PNG BytesIO
     buf = io.BytesIO()
-    img.save(buf, format="PNG")
+    board_img.save(buf, format="PNG", optimize=True)
     buf.seek(0)
     return buf
