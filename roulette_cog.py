@@ -1,7 +1,6 @@
 """
 roulette_cog.py
-نظام الروليت التفاعلي المتقدم لبوت أوهارا.
-تمت إعادة هيكلته بالكامل ليكون فائق التنظيم وبدون أي قلتشات أو تأخير في التحديثات.
+نظام الروليت التفاعلي المتقدم لبوت أوهارا (يدعم حتى 50 لاعباً).
 """
 
 import asyncio
@@ -22,11 +21,11 @@ from roulette_shop import (
 log = logging.getLogger("roulette_cog")
 
 WAITING_TIME = 27
-MAX_SEATS = 40
+MAX_SEATS = 50
 MIN_PLAYERS = 3
 
 HOWTO_TEXT = (
-    "**1-** انضم في اللعبة عبر الدخول السريع أو اختر مقعدك المفضل (1-40).\n"
+    f"**1-** انضم في اللعبة عبر الدخول السريع أو اختر مقعدك المفضل (1-{MAX_SEATS}).\n"
     "**2-** في كل جولة تدور العجلة وتختار لاعباً عشوائياً.\n"
     "**3-** اللاعب المختار يملك 30 ثانية لاختيار لاعب لطرده من اللعبة.\n"
     "**4-** يستمر الطرد حتى يتبقى لاعبان، ثم تدور العجلة لتتويج الفائز باللقب و 3 نقاط! 👑"
@@ -34,8 +33,8 @@ HOWTO_TEXT = (
 
 ITEMS_INFO = (
     "🛡️ **درع ضد الطرد (18 نقطة):** يحميك تلقائياً من أول محاولة طرد موجهة إليك.\n"
-    "⚡ **طرد ثنائي (20 نقطة):** يتيح لك طرد لاعبين اثنين في نفس دورك باللعبة.\n"
-    "🔄 **طرد عكسي (25 نقطة):** يعكس الضربة ليطرد اللاعب المعتدي بدلاً منك ويمنحك +1 نقطة!"
+    "🔄 **طرد عكسي (22 نقطة):** يعكس الضربة ليطرد اللاعب المعتدي بدلاً منك ويمنحك +1 نقطة!\n"
+    "⚡ **طرد ثنائي (25 نقطة):** يتيح لك طرد لاعبين اثنين في نفس دورك باللعبة."
 )
 
 
@@ -43,13 +42,12 @@ def format_players_text(players):
     if not players:
         return "لا يوجد لاعبين مشاركين حالياً.\nاضغط على الأزرار بالأسفل للانضمام!"
     sorted_players = sorted(players, key=lambda x: x["number"])
-    # Clean 2-column formatting
     lines = []
     chunk_size = 2
     for i in range(0, len(sorted_players), chunk_size):
         chunk = sorted_players[i:i + chunk_size]
         col_parts = [f"`[{p['number']:02d}]` <@{p['id']}>" for p in chunk]
-        lines.append("   ".join(col_parts))
+        lines.append("   ".join(col_parts))
     return "\n".join(lines)
 
 
@@ -59,7 +57,7 @@ class ChooseSeatModal(Modal, title="اختيار رقم المقعد 🔢"):
         self.game = game
         self.seat_input = TextInput(
             label=f"رقم المقعد المطلوب (من 1 إلى {MAX_SEATS})",
-            placeholder="مثال: 7 أو 24",
+            placeholder="مثال: 7 أو 45",
             min_length=1,
             max_length=2,
             required=True
@@ -107,14 +105,13 @@ class RouletteJoinView(View):
             if any(p["id"] == interaction.user.id for p in self.game.players):
                 return await interaction.response.send_message("❌ أنت مشارك بالفعل! للخروج اضغط على زر 'خروج'.", ephemeral=True)
             if len(self.game.players) >= MAX_SEATS:
-                return await interaction.response.send_message("❌ عدد المقاعد مكتمل (40/40)!", ephemeral=True)
+                return await interaction.response.send_message(f"❌ عدد المقاعد مكتمل ({MAX_SEATS}/{MAX_SEATS})!", ephemeral=True)
 
             taken = {p["number"] for p in self.game.players}
             available = [n for n in range(1, MAX_SEATS + 1) if n not in taken]
             if not available:
                 return await interaction.response.send_message("❌ عدد المقاعد مكتمل!", ephemeral=True)
 
-            # Assign first available or random seat
             number = random.choice(available)
             self.game.players.append({
                 "number": number,
@@ -170,7 +167,7 @@ class RouletteJoinView(View):
 
 
 class DoubleKickSelect(Select):
-    def __init__(self, others, parent_view):
+    def __init__(self, subset_players, parent_view, row=0, placeholder="🎯 اختر لاعبين لطردهم..."):
         self.parent_view = parent_view
         options = [
             discord.SelectOption(
@@ -178,13 +175,14 @@ class DoubleKickSelect(Select):
                 value=str(p["number"]),
                 description=f"طرد اللاعب رقم {p['number']}"
             )
-            for p in others[:25]
+            for p in subset_players[:25]
         ]
         super().__init__(
-            placeholder="🎯 اختر لاعبين اثنين لطردهم بالطرد الثنائي...",
+            placeholder=placeholder,
             min_values=1,
             max_values=min(2, len(options)),
-            options=options
+            options=options,
+            row=row
         )
 
     async def callback(self, interaction: discord.Interaction):
@@ -192,10 +190,22 @@ class DoubleKickSelect(Select):
             return await interaction.response.send_message("❌ فقط صاحب الدور يمكنه الاختيار!", ephemeral=True)
 
         selected_nums = [int(v) for v in self.values]
-        self.parent_view.main_view.choice = ("double_kick", selected_nums)
-        self.parent_view.main_view.stop()
-        self.parent_view.stop()
-        await interaction.response.defer()
+        for num in selected_nums:
+            if num not in self.parent_view.selected_targets:
+                self.parent_view.selected_targets.append(num)
+
+        # إذا اختار لاعبين اثنين أو لم يتبق سواهم، ننفذ الطرد الثنائي فوراً
+        if len(self.parent_view.selected_targets) >= 2 or len(self.parent_view.others) == 1:
+            final_targets = self.parent_view.selected_targets[:2]
+            self.parent_view.main_view.choice = ("double_kick", final_targets)
+            self.parent_view.main_view.stop()
+            self.parent_view.stop()
+            await interaction.response.defer()
+        else:
+            await interaction.response.send_message(
+                f"✅ تم تحديد المقعد `[{selected_nums[0]:02d}]` كهدف أول! اختر الهدف الثاني أو اضغط زر **تأكيد الطرد**.",
+                ephemeral=True
+            )
 
 
 class DoubleKickSelectView(View):
@@ -204,9 +214,30 @@ class DoubleKickSelectView(View):
         self.winner = winner
         self.others = others
         self.main_view = main_view
-        self.add_item(DoubleKickSelect(others, self))
+        self.selected_targets = []
 
-    @discord.ui.button(label="إلغاء ↩️", style=discord.ButtonStyle.secondary, row=1)
+        self.add_item(DoubleKickSelect(
+            others[:25], self, row=0,
+            placeholder="🎯 اختر لاعباً أو لاعبين (القائمة 1-25)..."
+        ))
+        if len(others) > 25:
+            self.add_item(DoubleKickSelect(
+                others[25:50], self, row=1,
+                placeholder="🎯 اختر لاعباً أو لاعبين (القائمة 26-50)..."
+            ))
+
+    @discord.ui.button(label="تأكيد الطرد ⚡", style=discord.ButtonStyle.success, row=2)
+    async def confirm_btn(self, interaction: discord.Interaction, button: Button):
+        if interaction.user.id != self.winner["id"]:
+            return await interaction.response.send_message("❌ فقط صاحب الدور يمكنه الاختيار!", ephemeral=True)
+        if not self.selected_targets:
+            return await interaction.response.send_message("❌ الرجاء اختيار لاعب واحد على الأقل من القائمة أولاً!", ephemeral=True)
+        self.main_view.choice = ("double_kick", self.selected_targets[:2])
+        self.main_view.stop()
+        self.stop()
+        await interaction.response.defer()
+
+    @discord.ui.button(label="إلغاء ↩️", style=discord.ButtonStyle.secondary, row=2)
     async def cancel(self, interaction: discord.Interaction, button: Button):
         if interaction.user.id != self.winner["id"]:
             return await interaction.response.send_message("❌ فقط صاحب الدور يمكنه الاختيار!", ephemeral=True)
@@ -222,7 +253,6 @@ class KickView(View):
         self.choice = None
         self.others = [p for p in players if p["id"] != winner["id"]]
 
-        # If opponents are 15 or less, show clean buttons
         if len(self.others) <= 15:
             for i, p in enumerate(self.others):
                 row = min(i // 5, 2)
@@ -235,7 +265,6 @@ class KickView(View):
                 btn.callback = self._make_kick_callback(p["number"])
                 self.add_item(btn)
         else:
-            # Dropdown menu for clean organization when opponents > 15 (No 20-player cutoff bug!)
             select1_options = [
                 discord.SelectOption(
                     label=f"[{p['number']:02d}] {p['username']}"[:100],
@@ -245,14 +274,13 @@ class KickView(View):
                 for p in self.others[:25]
             ]
             s1 = Select(
-                placeholder="🎯 اختر اللاعب المراد طرده من القائمة...",
+                placeholder="🎯 اختر اللاعب المراد طرده (1-25)...",
                 options=select1_options,
                 row=0
             )
             s1.callback = self._select_callback
             self.add_item(s1)
 
-            # If there are more than 25 players, provide second select menu
             if len(self.others) > 25:
                 select2_options = [
                     discord.SelectOption(
@@ -263,14 +291,13 @@ class KickView(View):
                     for p in self.others[25:50]
                 ]
                 s2 = Select(
-                    placeholder="🎯 تابع قائمة اللاعبين (26+)...",
+                    placeholder="🎯 تابع قائمة اللاعبين (26-50)...",
                     options=select2_options,
                     row=1
                 )
                 s2.callback = self._select_callback
                 self.add_item(s2)
 
-        # Action Buttons on row 3
         rand_btn = Button(label="🎲 طرد عشوائي", style=discord.ButtonStyle.primary, row=3)
         rand_btn.callback = self._random_kick_callback
         self.add_item(rand_btn)
@@ -279,7 +306,6 @@ class KickView(View):
         with_btn.callback = self._withdraw_callback
         self.add_item(with_btn)
 
-        # Show double kick button only if winner owns the item
         if has_item(winner["id"], "double_kick"):
             dk_btn = Button(label="⚡ طرد ثنائي", style=discord.ButtonStyle.success, row=3)
             dk_btn.callback = self._double_kick_callback
@@ -321,7 +347,7 @@ class KickView(View):
             return await interaction.response.send_message("❌ فقط صاحب الدور يمكنه الاختيار!", ephemeral=True)
         sub_view = DoubleKickSelectView(self.winner, self.others, self)
         await interaction.response.send_message(
-            "⚡ **خاصية الطرد الثنائي:** اختر لاعباً أو لاعبين من القائمة أدناه لطردهم في نفس الدور:",
+            "⚡ **خاصية الطرد الثنائي:** اختر لاعبين اثنين من القائمة أدناه لطردهم في نفس الدور:",
             view=sub_view,
             ephemeral=True
         )
@@ -363,7 +389,6 @@ class RouletteGame:
         return embed
 
     async def request_refresh(self):
-        """Coalesce and debounce embed edits to prevent hitting Discord rate limits (No glitching)."""
         if self._refresh_scheduled:
             return
         self._refresh_scheduled = True
@@ -389,7 +414,6 @@ class RouletteCog(commands.Cog):
         return channel_id in self.active_games
 
     async def stop_game(self, channel_id, author=None):
-        """Cleanly terminate an active roulette game in the channel."""
         game = self.active_games.pop(channel_id, None)
         if not game:
             return False
@@ -416,7 +440,6 @@ class RouletteCog(commands.Cog):
             else:
                 return await ctx.send("❌ يوجد لعبة روليت نشطة بالفعل في هذا الروم!")
 
-        # Check bot-wide active game registry if available
         try:
             from bot import has_active_game, get_active_game, register_game
             if has_active_game(cid):
@@ -463,8 +486,8 @@ class RouletteCog(commands.Cog):
 
         inv_text = (
             f"• 🛡️ درع ضد الطرد: `{inv.get('shield', 0)}`\n"
-            f"• ⚡ طرد ثنائي: `{inv.get('double_kick', 0)}`\n"
-            f"• 🔄 طرد عكسي: `{inv.get('reverse_kick', 0)}`"
+            f"• 🔄 طرد عكسي: `{inv.get('reverse_kick', 0)}`\n"
+            f"• ⚡ طرد ثنائي: `{inv.get('double_kick', 0)}`"
         )
         embed.add_field(name="🎒 مخزون الخواص", value=inv_text, inline=False)
         embed.set_footer(text="استخدم .متجر لشراء المزيد من الخواص!")
@@ -499,20 +522,17 @@ class RouletteCog(commands.Cog):
     async def _run_game_lifecycle(self, ctx, game):
         cid = ctx.channel.id
         try:
-            # 1. Join Phase
             game.join_view = RouletteJoinView(game)
             game.current_view = game.join_view
             embed = game.build_join_embed()
             game.main_message = await ctx.send(embed=embed, view=game.join_view)
 
-            # Wait for registration duration without spamming edits (Discord relative timestamp updates on client)
             await asyncio.sleep(WAITING_TIME)
 
             if game.cancelled:
                 return
 
             game.state = "IN_PROGRESS"
-            # Disable join buttons on the main message
             for b in game.join_view.children:
                 b.disabled = True
             try:
@@ -526,10 +546,8 @@ class RouletteCog(commands.Cog):
 
             await ctx.send(f"✅ اكتمل تسجيل اللاعبين ({len(game.players)} لاعبين)! جاري تجهيز العجلة وبدء الجولة الأولى...")
 
-            # Pre-fetch avatars concurrently in parallel for smooth rendering
             await download_avatars_concurrently(game.players)
 
-            # 2. Iterative Game Loop (NO recursion stack issues!)
             round_number = 1
             while len(game.players) > 2 and not game.cancelled:
                 await self._run_single_round(ctx, game, round_number)
@@ -537,7 +555,6 @@ class RouletteCog(commands.Cog):
                 if len(game.players) > 2 and not game.cancelled:
                     await asyncio.sleep(2)
 
-            # 3. Final Round / Victory Phase
             if not game.cancelled and len(game.players) >= 1:
                 await self._crown_champion(ctx, game)
 
@@ -563,7 +580,6 @@ class RouletteCog(commands.Cog):
         winner = players[-1]
         highlight_idx = len(players) - 1
 
-        # Generate wheel image
         img_buf = await make_image(
             [{"number": p["number"], "img": p.get("avimg")} for p in players],
             highlight=highlight_idx
@@ -579,7 +595,6 @@ class RouletteCog(commands.Cog):
         if game.cancelled:
             return
 
-        # Prepare Kick View
         kick_view = KickView(game, winner, players)
         game.current_view = kick_view
         prompt_msg = await ctx.send(
@@ -589,7 +604,6 @@ class RouletteCog(commands.Cog):
 
         await kick_view.wait()
 
-        # Disable buttons on prompt message
         for item in kick_view.children:
             item.disabled = True
         try:
@@ -603,9 +617,7 @@ class RouletteCog(commands.Cog):
         choice = kick_view.choice
         others = [p for p in players if p["id"] != winner["id"]]
 
-        # Handle Choice
         if not choice:
-            # Timeout / AFK
             await ctx.send(f"💣 تم طرد <@{winner['id']}> من اللعبة لعدم التفاعل خلال 30 ثانية!")
             game.players = [p for p in game.players if p["id"] != winner["id"]]
             return
@@ -631,7 +643,6 @@ class RouletteCog(commands.Cog):
 
             kick_str = " (عشوائياً)" if is_random else ""
 
-            # Check 1: Reverse Kick
             if use_item(victim["id"], "reverse_kick"):
                 v_pts = record_kick(victim["id"])
                 await ctx.send(
@@ -643,7 +654,6 @@ class RouletteCog(commands.Cog):
                 game.players = [p for p in game.players if p["id"] != winner["id"]]
                 return
 
-            # Check 2: Shield
             if use_item(victim["id"], "shield"):
                 await ctx.send(
                     f"🛡️ **درع ضد الطرد!** حاول <@{winner['id']}> طرد <@{victim['id']}>{kick_str}، "
@@ -652,7 +662,6 @@ class RouletteCog(commands.Cog):
                 )
                 return
 
-            # Normal Kick
             w_pts = record_kick(winner["id"])
             await ctx.send(
                 f"💣 تم طرد <@{victim['id']}> من اللعبة{kick_str}! "
@@ -672,7 +681,7 @@ class RouletteCog(commands.Cog):
                 pts_earned = 0
                 for v in targets:
                     if use_item(v["id"], "reverse_kick"):
-                        v_pts = add_points(v["id"], 1)
+                        v_pts = record_kick(v["id"])
                         report.append(f"🔄 رد <@{v['id']}> الضربة بطرد عكسي!")
                         game.players = [p for p in game.players if p["id"] != winner["id"]]
                         await ctx.send(
@@ -685,9 +694,10 @@ class RouletteCog(commands.Cog):
                     else:
                         game.players = [p for p in game.players if p["id"] != v["id"]]
                         report.append(f"💣 طرد <@{v['id']}>")
+                        record_kick(winner["id"])
                         pts_earned += 1
 
-                total_pts = add_points(winner["id"], pts_earned)
+                total_pts = get_points(winner["id"])
                 res_str = " | ".join(report) if report else "لم يصب أحداً"
                 await ctx.send(
                     f"⚡ **نتائج الطرد الثنائي لـ <@{winner['id']}>:**\n"
@@ -696,7 +706,6 @@ class RouletteCog(commands.Cog):
                 )
 
     async def _crown_champion(self, ctx, game):
-        """Final showdown and champion crowning."""
         if len(game.players) == 2:
             players = list(game.players)
             random.shuffle(players)

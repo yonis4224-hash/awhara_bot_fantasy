@@ -1,18 +1,18 @@
 """
 Bank Al-Haz Graphics Generator (bank_gfx.py)
 Generates high-definition, professional board graphics using the luxury AI-generated
-board template, with crystal-clear Arabic calligraphy, large fonts, and vibrant UI badges.
+board template, with in-memory font & template caching for instant rendering.
 """
 
 import os
 import io
 import re
 import math
+from functools import lru_cache
 import arabic_reshaper
 from bidi.algorithm import get_display
 from PIL import Image, ImageDraw, ImageFont
 
-# Board Color Palette
 BG_COLOR = (15, 20, 18)
 GOLD_COLOR = (245, 195, 55)
 GOLD_LIGHT = (255, 230, 140)
@@ -40,7 +40,6 @@ GROUP_COLORS = {
     'special': (75, 85, 95)
 }
 
-# Regex to strip all emojis and non-standard symbols that cause square tofu boxes []
 EMOJI_PATTERN = re.compile(
     '['
     '\U00010000-\U0010ffff'
@@ -53,22 +52,19 @@ EMOJI_PATTERN = re.compile(
     ']+', flags=re.UNICODE
 )
 
+@lru_cache(maxsize=256)
 def clean_arabic(text):
     """Strips emojis, markdown and unsupported symbols that cause tofu boxes in Arabic TTF fonts."""
     if not text:
         return ""
-    # Strip markdown formatting
     cleaned = re.sub(r'[*_`~#]', '', str(text))
-    # Replace slash with ' من '
     cleaned = cleaned.replace('/', ' من ')
-    # Replace parentheses, brackets, and math symbols with spaces/hyphens
     cleaned = re.sub(r'[()\[\]{}+=]', ' ', cleaned)
-    # Strip emojis and variation selectors
     cleaned = EMOJI_PATTERN.sub('', cleaned)
-    # Clean up multiple spaces
     cleaned = re.sub(r'\s+', ' ', cleaned).strip()
     return cleaned
 
+@lru_cache(maxsize=256)
 def ar(text):
     """Cleans emojis, reshapes and reorders Arabic text for flawless RTL visual rendering."""
     if not text:
@@ -95,15 +91,15 @@ def _find_font(font_name):
             return c
     return None
 
+@lru_cache(maxsize=32)
 def get_ar_font(size):
-    """Prioritizes NotoSansArabic-Bold which has 100% full Arabic Presentation Forms coverage."""
+    """Prioritizes NotoSansArabic-Bold with in-memory caching."""
     p = _find_font("NotoSansArabic-Bold.ttf")
     if p:
         try:
             return ImageFont.truetype(p, size)
         except Exception:
             pass
-    # System fallbacks
     for sys_font in [r"C:\Windows\Fonts\arialbd.ttf", r"C:\Windows\Fonts\tahoma.ttf", "arial.ttf", "DejaVuSans.ttf"]:
         try:
             return ImageFont.truetype(sys_font, size)
@@ -111,8 +107,9 @@ def get_ar_font(size):
             pass
     return ImageFont.load_default()
 
+@lru_cache(maxsize=32)
 def get_latin_font(size):
-    """Loads clean Latin/number font for badges, player indices, and levels."""
+    """Loads clean Latin/number font with in-memory caching."""
     p = _find_font("NotoSans-Bold.ttf")
     if p:
         try:
@@ -126,22 +123,10 @@ def get_latin_font(size):
             pass
     return ImageFont.load_default()
 
-# Exact slot bounding coordinates for the 7x7 grid in the 1024x1024 luxury template
 COL_X = [(51, 202), (226, 323), (345, 441), (464, 560), (582, 679), (701, 798), (822, 973)]
 ROW_Y = [(51, 203), (227, 324), (346, 444), (465, 563), (584, 682), (702, 800), (821, 973)]
 
 def _get_tile_rect(tile_idx):
-    """
-    Computes coordinates for 24 perimeter tiles around the 7x7 grid.
-    0: Bottom-Right corner (Start)
-    1..5: Bottom edge (Right to Left)
-    6: Bottom-Left corner (Jail)
-    7..11: Left edge (Bottom to Top)
-    12: Top-Left corner (Free Parking)
-    13..17: Top edge (Left to Right)
-    18: Top-Right corner (Go to Jail)
-    19..23: Right edge (Top to Bottom)
-    """
     if tile_idx == 0:
         c, r = 6, 6
     elif 1 <= tile_idx <= 5:
@@ -156,7 +141,7 @@ def _get_tile_rect(tile_idx):
         c, r = tile_idx - 12, 0
     elif tile_idx == 18:
         c, r = 6, 0
-    else:  # 19..23
+    else:
         c, r = 6, tile_idx - 18
 
     x1, x2 = COL_X[c]
@@ -186,7 +171,13 @@ def _draw_star(draw, cx, cy, r_outer=5, r_inner=2.5, fill=GOLD_COLOR):
         points.append((cx + r * math.cos(ang), cy + r * math.sin(ang)))
     draw.polygon(points, fill=fill)
 
+_CACHED_TEMPLATE = None
+
 def _load_template():
+    global _CACHED_TEMPLATE
+    if _CACHED_TEMPLATE is not None:
+        return _CACHED_TEMPLATE.copy()
+
     base_dir = os.path.dirname(os.path.abspath(__file__))
     paths = [
         os.path.join(base_dir, "assets", "bank_board_template.jpg"),
@@ -198,24 +189,21 @@ def _load_template():
     for p in paths:
         if os.path.exists(p):
             try:
-                return Image.open(p).convert("RGBA").resize((1024, 1024), Image.LANCZOS)
+                _CACHED_TEMPLATE = Image.open(p).convert("RGBA").resize((1024, 1024), Image.LANCZOS)
+                return _CACHED_TEMPLATE.copy()
             except Exception:
                 pass
     fallback = Image.new("RGBA", (1024, 1024), (20, 26, 23))
     fdraw = ImageDraw.Draw(fallback)
     fdraw.rectangle([45, 45, 979, 979], outline=GOLD_COLOR, width=4)
     fdraw.rectangle([210, 210, 814, 814], fill=(22, 45, 34), outline=(60, 95, 75), width=3)
-    return fallback
+    _CACHED_TEMPLATE = fallback
+    return _CACHED_TEMPLATE.copy()
 
 def render_board(tiles, players, current_turn_idx, last_dice=(0, 0), log_msg=""):
-    """
-    Renders the luxury Bank Al-Haz board with high-definition typography,
-    clear property values, player pawns, and central HUD.
-    """
     board_img = _load_template()
     draw = ImageDraw.Draw(board_img, "RGBA")
 
-    # Font definitions with large, legible sizes
     font_corner = get_ar_font(21)
     font_city_title = get_ar_font(18)
     font_city_title_small = get_ar_font(15)
@@ -231,7 +219,6 @@ def render_board(tiles, players, current_turn_idx, last_dice=(0, 0), log_msg="")
     font_balance = get_ar_font(15)
     font_log = get_ar_font(14)
 
-    # 1. Render All 24 Perimeter Tiles
     for i, t in enumerate(tiles):
         x1, y1, x2, y2, c, r = _get_tile_rect(i)
         tw = x2 - x1
@@ -243,14 +230,12 @@ def render_board(tiles, players, current_turn_idx, last_dice=(0, 0), log_msg="")
         t_price = t.get('price', 0)
         t_name = clean_arabic(t.get('name', ''))
 
-        # Property Color Header Banner (if city)
         if not is_corner and t_group != 'special':
             g_color = GROUP_COLORS.get(t_group, (75, 85, 95))
             banner_h = 20 if tw > th else 22
             draw.rounded_rectangle([x1 + 3, y1 + 3, x2 - 3, y1 + banner_h], radius=4, fill=g_color)
             draw.line([x1 + 3, y1 + banner_h, x2 - 3, y1 + banner_h], fill=GOLD_COLOR, width=1)
 
-        # Draw Tile Text
         if is_corner:
             _center_text(draw, cx, cy - 20, ar(t_name), font_corner, fill=GOLD_LIGHT, shadow_offset=2)
             if i == 0:
@@ -274,7 +259,6 @@ def render_board(tiles, players, current_turn_idx, last_dice=(0, 0), log_msg="")
             else:
                 _center_text(draw, cx, name_y, ar(t_name), font_city_title, fill=WHITE, shadow_offset=2)
 
-            # Price / Info Label
             price_y = y2 - 20
             pb_w = 66
             pb_h = 22
@@ -288,7 +272,6 @@ def render_board(tiles, players, current_turn_idx, last_dice=(0, 0), log_msg="")
                 elif "ضريبة" in t_name:
                     _center_text(draw, cx, price_y, ar("خصم 100 ج"), font_price, fill=(255, 130, 130))
 
-        # Owner Badge & Houses/Hotels Level
         owner_idx = t.get('owner')
         if owner_idx is not None and 0 <= owner_idx < len(PLAYER_COLORS):
             owner_col = PLAYER_COLORS[owner_idx]
@@ -298,12 +281,10 @@ def render_board(tiles, players, current_turn_idx, last_dice=(0, 0), log_msg="")
             draw.rounded_rectangle([bx1, by1, bx1 + badge_w, by1 + badge_h], radius=4, fill=owner_col, outline=WHITE, width=1)
             _center_text(draw, bx1 + badge_w // 2, by1 + badge_h // 2, f"P{owner_idx+1}", font_owner_badge, fill=WHITE)
 
-            # Property Upgrade Stars
             level = t.get('level', 0)
             for s_idx in range(level):
                 _draw_star(draw, x1 + 10 + s_idx * 11, y1 + 12, r_outer=4.5, r_inner=2.2, fill=GOLD_COLOR)
 
-    # 2. Render Player Pawns on Tiles
     tile_players = {}
     for p_idx, p in enumerate(players):
         if p.get('bankrupt', False):
@@ -334,28 +315,22 @@ def render_board(tiles, players, current_turn_idx, last_dice=(0, 0), log_msg="")
                 px = cx - (num_p - 1) * 15 + idx * 30
                 py = y1 + 54
 
-            # Pawn shadow & 3D body
             draw.ellipse([px - pawn_r + 2, py - pawn_r + 2, px + pawn_r + 2, py + pawn_r + 2], fill=(0, 0, 0, 160))
             draw.ellipse([px - pawn_r, py - pawn_r, px + pawn_r, py + pawn_r], fill=col, outline=WHITE, width=2)
             _center_text(draw, px, py, str(p_idx + 1), font_pawn, fill=WHITE, shadow_offset=1)
 
-    # 3. Center Area Rendering
     center_cx = 512
 
-    # A. Upper Title
     _center_text(draw, center_cx, 260, ar("بنك الحظ الملكي"), font_main_title, fill=GOLD_COLOR, shadow_offset=3)
     _center_text(draw, center_cx, 305, ar("لعبة التجارة والاستثمار الكبرى"), font_sub_title, fill=GOLD_LIGHT, shadow_offset=1)
 
-    # B. Inside Golden Cartouche
     cart_top = 405
     cart_bottom = 615
     cart_left = 405
     cart_right = 619
 
-    # Semi-transparent dark velvet glass inside the cartouche
     draw.rounded_rectangle([cart_left, cart_top, cart_right, cart_bottom], radius=14, fill=(12, 22, 18, 225), outline=(218, 165, 32), width=2)
 
-    # Dice Roll Display
     d1, d2 = last_dice
     if d1 > 0 and d2 > 0:
         dice_text = f"النرد: {d1} و {d2} - المجموع {d1 + d2}"
@@ -363,7 +338,6 @@ def render_board(tiles, players, current_turn_idx, last_dice=(0, 0), log_msg="")
         dice_text = "ارمِ النرد للانطلاق!"
     _center_text(draw, center_cx, cart_top + 45, ar(dice_text), font_dice, fill=GOLD_COLOR, shadow_offset=2)
 
-    # Current Turn Banner
     if 0 <= current_turn_idx < len(players):
         curr_p = players[current_turn_idx]
         p_name = curr_p.get('name', f'لاعب {current_turn_idx+1}')
@@ -373,18 +347,15 @@ def render_board(tiles, players, current_turn_idx, last_dice=(0, 0), log_msg="")
         turn_pill_h = 42
         turn_y = cart_top + 105
         draw.rounded_rectangle([center_cx - turn_pill_w // 2, turn_y - turn_pill_h // 2, center_cx + turn_pill_w // 2, turn_y + turn_pill_h // 2], radius=8, fill=(25, 35, 30), outline=p_col, width=2)
-        # Indicator dot
         draw.ellipse([center_cx - turn_pill_w // 2 + 10, turn_y - 8, center_cx - turn_pill_w // 2 + 26, turn_y + 8], fill=p_col, outline=WHITE)
         _center_text(draw, center_cx + 12, turn_y, ar(f"دور: {p_name[:10]}"), font_turn, fill=WHITE, shadow_offset=1)
 
-        # Current tile destination info
         curr_pos = curr_p.get('position', 0)
         dest_tile = tiles[curr_pos] if curr_pos < len(tiles) else None
         if dest_tile:
             dest_name = clean_arabic(dest_tile.get('name', ''))
             _center_text(draw, center_cx, cart_top + 160, ar(f"المكان: {dest_name}"), font_sub_title, fill=GOLD_LIGHT, shadow_offset=1)
 
-    # C. Lower Panel (Balances and Log)
     panel_y1 = 678
     panel_y2 = 808
     panel_w = 440
@@ -392,11 +363,8 @@ def render_board(tiles, players, current_turn_idx, last_dice=(0, 0), log_msg="")
     panel_x2 = center_cx + panel_w // 2
 
     draw.rounded_rectangle([panel_x1, panel_y1, panel_x2, panel_y2], radius=10, fill=(14, 20, 18, 240), outline=(180, 150, 40), width=2)
-
-    # Balances Header
     _center_text(draw, center_cx, panel_y1 + 18, ar("أرصدة المتسابقين"), font_hud_header, fill=GOLD_COLOR, shadow_offset=1)
 
-    # 4 Players 2-Column Table
     row1_y = panel_y1 + 46
     row2_y = panel_y1 + 72
     col1_x = panel_x1 + 115
@@ -417,7 +385,6 @@ def render_board(tiles, players, current_turn_idx, last_dice=(0, 0), log_msg="")
         p_col = PLAYER_COLORS[p_idx]
         px, py = coords[p_idx]
 
-        # Player color pill with number
         draw.ellipse([px - 85, py - 6, px - 71, py + 8], fill=p_col, outline=WHITE)
         _center_text(draw, px - 78, py + 1, str(p_idx + 1), font_pawn, fill=WHITE)
 
@@ -433,12 +400,10 @@ def render_board(tiles, players, current_turn_idx, last_dice=(0, 0), log_msg="")
 
         _draw_shadow_text(draw, (px - 62, py - 9), ar(entry_text), font_balance, fill=text_col)
 
-    # Event Log Ticker at bottom of panel
     if log_msg:
         draw.line([panel_x1 + 15, panel_y1 + 95, panel_x2 - 15, panel_y1 + 95], fill=(60, 80, 70), width=1)
         _center_text(draw, center_cx, panel_y1 + 104, ar(f"آخر حدث: {clean_arabic(log_msg)[:44]}"), font_log, fill=GOLD_LIGHT, shadow_offset=1)
 
-    # Export to PNG BytesIO
     buf = io.BytesIO()
     board_img.save(buf, format="PNG", optimize=True)
     buf.seek(0)

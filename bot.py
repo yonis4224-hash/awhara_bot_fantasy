@@ -41,7 +41,7 @@ def t(title, fields, tags):
     text = f"**```{title}  ```**\n\n"
     text += "\n\n".join(f"{f} :  " for f in fields)
     if tags:
-        text += f"\n\n{SEP}{tags}**"
+        text += f"\n\n{SEP}{tags}"
     else:
         text += f"\n\n{SEP}"
     return text
@@ -220,9 +220,6 @@ CHANNEL_CATS = {
 def get_cat(channel_id):
     return CHANNEL_CATS.get(channel_id)
 
-# ------------------------------------------------------------------------------
-# واجهة التفاعل
-# ------------------------------------------------------------------------------
 class CatSelect(Select):
     def __init__(self, cat):
         super().__init__(placeholder=f"اختر الديباجة لـ {cat['name']}...", min_values=1, max_values=1,
@@ -242,7 +239,6 @@ class CatSelect(Select):
             return await interaction.response.send_message("❌ هذا الروم غير مخصص للديباجات.", ephemeral=True)
         val = self.values[0]
         text = cat["templates"][val]
-        title = cat["titles"][val]
         await interaction.response.send_message(text, ephemeral=True)
 
 class CatView(View):
@@ -259,7 +255,6 @@ from basra_cog import BasraCog
 from profile_cog import ProfileCog
 from admin_cog import AdminCog
 
-# سجل مركزي لجميع الألعاب النشطة (channel_id -> game_type)
 active_all_games = {}
 
 GAME_NAMES_AR = {
@@ -271,7 +266,6 @@ GAME_NAMES_AR = {
 }
 
 def is_admin_or_mod(ctx):
-    """التحقق مما إذا كان المستخدم يملك صلاحيات إدارية أو إشرافية في السيرفر"""
     if not ctx.guild:
         return True
     p = ctx.author.guild_permissions
@@ -284,7 +278,6 @@ def is_admin_or_mod(ctx):
     )
 
 def find_active_game(channel_id):
-    """يبحث عن أي لعبة نشطة في القناة من جميع السجلات ويعيد نوعها (أو None)."""
     t = active_all_games.get(channel_id)
     if t:
         return t
@@ -312,22 +305,18 @@ def find_active_game(channel_id):
     return None
 
 def register_game(channel_id, game_type):
-    """تسجيل لعبة جديدة في القناة"""
     active_all_games[channel_id] = game_type
 
 def unregister_game(channel_id):
-    """إلغاء تسجيل لعبة من القناة"""
     active_all_games.pop(channel_id, None)
 
 def get_active_game(channel_id):
-    """الحصول على نوع اللعبة النشطة في القناة بالاسم العربي"""
     gt = find_active_game(channel_id)
     if gt:
         return GAME_NAMES_AR.get(gt, gt)
     return None
 
 def has_active_game(channel_id):
-    """التحقق من وجود لعبة نشطة في القناة"""
     return find_active_game(channel_id) is not None
 
 async def setup_hook():
@@ -358,7 +347,6 @@ async def on_message(message):
     if message.author.bot:
         return
 
-    # كلام حب ليبي - فقط إذا كتب "نحبك" بالضبط
     if message.content.strip() == "نحبك":
         ردود_حب = [
             "يا بعد عيني و قلبي, تسلملي يالغالي.",
@@ -396,7 +384,6 @@ async def on_message(message):
         await bot.process_commands(message)
         return
 
-    # شات الألعاب - لا توجد ديباجات هنا
     if message.channel.id == GAME_CHANNEL:
         await bot.process_commands(message)
         return
@@ -436,7 +423,7 @@ async def show_commands(ctx):
                           "• `13` مسابقة • `14` استفتاء • `15` مشاهدة جماعية\n"
                           f"أو استخدم `.{1}` إلى `.{15}`",
                     inline=False)
-    embed.add_field(name="🎰 لعبة الروليت",
+    embed.add_field(name="🎰 لعبة الروليت (حتى 50 لاعب)",
                     value="• `روليت` أو `roulette` - بدء لعبة الروليت\n"
                           "• `توقف` أو `انهاء` - إيقاف اللعبة بواسطة المشرف\n"
                           "• `نقاطي` أو `points` - عرض نقاطك ومخزونك\n"
@@ -445,8 +432,8 @@ async def show_commands(ctx):
     embed.add_field(name="🏪 متجر الخواص",
                     value="• `متجر` أو `shop` - فتح متجر خواص الروليت\n"
                           "• 🛡️ درع ضد الطرد (18 نقطة)\n"
-                          "• ⚡ طرد ثنائي (20 نقطة)\n"
-                          "• 🔄 طرد عكسي (25 نقطة)",
+                          "• 🔄 طرد عكسي (22 نقطة)\n"
+                          "• ⚡ طرد ثنائي (25 نقطة)",
                     inline=False)
     embed.add_field(name="💖 تفاعلات",
                     value="اكتب **نحبك** في أي مكان وسيرد البوت بكلام غزل ليبي 😉",
@@ -477,7 +464,6 @@ for _num in range(1, 16):
     bot.command(name=str(_num))(make_template_cmd(_num))
 
 
-
 @bot.command(name="توقف", aliases=["stop", "_توقف"])
 async def stop_cmd(ctx):
     if not is_admin_or_mod(ctx):
@@ -497,14 +483,13 @@ async def end_any_game(ctx):
     if not game_type:
         return await ctx.send("❌ لا توجد أي لعبة نشطة قيد التشغيل حالياً في هذا الروم!")
 
-    # 1. إلغاء أي مؤقتات نشطة وتنظيف كائنات الألعاب
     try:
         from tarneeb_cog import active_games as active_tarneeb
         if cid in active_tarneeb:
             t_game = active_tarneeb.get(cid)
             cog = bot.get_cog("TarneebCog")
             if cog and t_game:
-                t_game.state = 'GAME_OVER'  # <-- Added
+                t_game.state = 'GAME_OVER'
                 cog.cancel_turn_timer(t_game)
     except Exception:
         pass
@@ -515,8 +500,24 @@ async def end_any_game(ctx):
             b_game = active_basra_games.get(cid)
             cog = bot.get_cog("BasraCog")
             if cog and b_game:
-                b_game.state = 'GAME_OVER'  # <-- Added
+                b_game.state = 'GAME_OVER'
                 cog.cancel_turn_timer(b_game)
+    except Exception:
+        pass
+
+    try:
+        from bank_cog import active_bank_games
+        if cid in active_bank_games:
+            bank_game = active_bank_games.get(cid)
+            cog = bot.get_cog("BankCog")
+            if bank_game:
+                bank_game.state = 'GAME_OVER'
+                if hasattr(bank_game, 'cancelled'):
+                    bank_game.cancelled = True
+                if hasattr(bank_game, 'current_view') and bank_game.current_view:
+                    bank_game.current_view.stop()
+                if cog and hasattr(cog, 'cancel_turn_timer'):
+                    cog.cancel_turn_timer(bank_game)
     except Exception:
         pass
 
@@ -527,7 +528,6 @@ async def end_any_game(ctx):
     except Exception:
         pass
 
-    # 2. تنظيف جميع السجلات لضمان إزالة اللعبة نهائياً
     active_all_games.pop(cid, None)
     try:
         from basra_cog import active_basra_games

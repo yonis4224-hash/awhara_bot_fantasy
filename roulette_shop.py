@@ -1,6 +1,6 @@
 """
 Roulette Shop & Points Engine (roulette_shop.py)
-Handles points persistence, atomic file saving, items purchasing,
+Handles points persistence, atomic file saving, in-memory caching, items purchasing,
 inventory management, leaderboard, and Discord Shop View.
 """
 import os
@@ -19,30 +19,40 @@ ITEMS = {
         "emoji": "🛡️",
         "desc": "يحميك تلقائياً من أول محاولة طرد موجهة إليك ويتم استهلاكه."
     },
-    "double_kick": {
-        "name": "طرد ثنائي ⚡",
-        "price": 20,
-        "emoji": "⚡",
-        "desc": "يتيح لك طرد لاعبين اثنين في نفس دورك باللعبة."
-    },
     "reverse_kick": {
         "name": "طرد عكسي 🔄",
-        "price": 25,
+        "price": 22,
         "emoji": "🔄",
         "desc": "يعكس ضربة الطرد الموجهة إليك لتطرد اللاعب المهاجم بدلاً منك!"
+    },
+    "double_kick": {
+        "name": "طرد ثنائي ⚡",
+        "price": 25,
+        "emoji": "⚡",
+        "desc": "يتيح لك طرد لاعبين اثنين في نفس دورك باللعبة."
     }
 }
 
+_CACHE = None
+
 def load_data():
+    global _CACHE
+    if _CACHE is not None:
+        return _CACHE
     if not os.path.exists(DATA_PATH):
-        return {}
+        _CACHE = {}
+        return _CACHE
     try:
         with open(DATA_PATH, "r", encoding="utf-8") as f:
-            return json.load(f)
+            _CACHE = json.load(f)
+            return _CACHE
     except Exception:
-        return {}
+        _CACHE = {}
+        return _CACHE
 
 def save_data(data):
+    global _CACHE
+    _CACHE = data
     try:
         temp_path = DATA_PATH + ".tmp"
         with open(temp_path, "w", encoding="utf-8") as f:
@@ -241,19 +251,19 @@ class RouletteShopView(View):
         await interaction.response.edit_message(embed=self.build_embed(), view=self)
         await interaction.followup.send(msg, ephemeral=True)
 
-    @discord.ui.button(label="شراء طرد ثنائي (20)", style=discord.ButtonStyle.primary, emoji="⚡")
-    async def buy_double(self, interaction: discord.Interaction, button: Button):
-        if interaction.user.id != self.user.id:
-            return await interaction.response.send_message("❌ هذه القائمة خاصة بمستخدم آخر!", ephemeral=True)
-        ok, msg = buy_item(self.user.id, "double_kick")
-        await interaction.response.edit_message(embed=self.build_embed(), view=self)
-        await interaction.followup.send(msg, ephemeral=True)
-
-    @discord.ui.button(label="شراء طرد عكسي (25)", style=discord.ButtonStyle.danger, emoji="🔄")
+    @discord.ui.button(label="شراء طرد عكسي (22)", style=discord.ButtonStyle.danger, emoji="🔄")
     async def buy_reverse(self, interaction: discord.Interaction, button: Button):
         if interaction.user.id != self.user.id:
             return await interaction.response.send_message("❌ هذه القائمة خاصة بمستخدم آخر!", ephemeral=True)
         ok, msg = buy_item(self.user.id, "reverse_kick")
+        await interaction.response.edit_message(embed=self.build_embed(), view=self)
+        await interaction.followup.send(msg, ephemeral=True)
+
+    @discord.ui.button(label="شراء طرد ثنائي (25)", style=discord.ButtonStyle.primary, emoji="⚡")
+    async def buy_double(self, interaction: discord.Interaction, button: Button):
+        if interaction.user.id != self.user.id:
+            return await interaction.response.send_message("❌ هذه القائمة خاصة بمستخدم آخر!", ephemeral=True)
+        ok, msg = buy_item(self.user.id, "double_kick")
         await interaction.response.edit_message(embed=self.build_embed(), view=self)
         await interaction.followup.send(msg, ephemeral=True)
 
