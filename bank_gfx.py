@@ -319,90 +319,53 @@ def render_board(tiles, players, current_turn_idx, last_dice=(0, 0), log_msg="")
             draw.ellipse([px - pawn_r, py - pawn_r, px + pawn_r, py + pawn_r], fill=col, outline=WHITE, width=2)
             _center_text(draw, px, py, str(p_idx + 1), font_pawn, fill=WHITE, shadow_offset=1)
 
+    # 3. Center Area Rendering (Clean & Minimalist HUD)
     center_cx = 512
 
-    _center_text(draw, center_cx, 260, ar("بنك الحظ الملكي"), font_main_title, fill=GOLD_COLOR, shadow_offset=3)
-    _center_text(draw, center_cx, 305, ar("لعبة التجارة والاستثمار الكبرى"), font_sub_title, fill=GOLD_LIGHT, shadow_offset=1)
+    # A. Upper Title Only (بدون عناوين فرعية مزدحمة)
+    _center_text(draw, center_cx, 275, ar("بنك الحظ الملكي"), font_main_title, fill=GOLD_COLOR, shadow_offset=3)
 
-    cart_top = 405
-    cart_bottom = 615
-    cart_left = 405
-    cart_right = 619
-
+    # B. Inside Golden Cartouche (Dice & Turn Only)
+    cart_top, cart_bottom = 420, 595
+    cart_left, cart_right = 410, 614
     draw.rounded_rectangle([cart_left, cart_top, cart_right, cart_bottom], radius=14, fill=(12, 22, 18, 225), outline=(218, 165, 32), width=2)
 
     d1, d2 = last_dice
-    if d1 > 0 and d2 > 0:
-        dice_text = f"النرد: {d1} و {d2} - المجموع {d1 + d2}"
-    else:
-        dice_text = "ارمِ النرد للانطلاق!"
-    _center_text(draw, center_cx, cart_top + 45, ar(dice_text), font_dice, fill=GOLD_COLOR, shadow_offset=2)
+    dice_text = f"النرد: {d1} + {d2} = {d1 + d2}" if (d1 > 0 and d2 > 0) else "ارمِ النرد!"
+    _center_text(draw, center_cx, cart_top + 50, ar(dice_text), font_dice, fill=GOLD_COLOR, shadow_offset=2)
 
     if 0 <= current_turn_idx < len(players):
         curr_p = players[current_turn_idx]
-        p_name = curr_p.get('name', f'لاعب {current_turn_idx+1}')
+        p_name = curr_p.get('name', f'P{current_turn_idx+1}')[:10]
         p_col = PLAYER_COLORS[current_turn_idx]
 
-        turn_pill_w = 190
-        turn_pill_h = 42
-        turn_y = cart_top + 105
-        draw.rounded_rectangle([center_cx - turn_pill_w // 2, turn_y - turn_pill_h // 2, center_cx + turn_pill_w // 2, turn_y + turn_pill_h // 2], radius=8, fill=(25, 35, 30), outline=p_col, width=2)
-        draw.ellipse([center_cx - turn_pill_w // 2 + 10, turn_y - 8, center_cx - turn_pill_w // 2 + 26, turn_y + 8], fill=p_col, outline=WHITE)
-        _center_text(draw, center_cx + 12, turn_y, ar(f"دور: {p_name[:10]}"), font_turn, fill=WHITE, shadow_offset=1)
+        turn_y = cart_top + 115
+        draw.rounded_rectangle([center_cx - 88, turn_y - 20, center_cx + 88, turn_y + 20], radius=8, fill=(25, 35, 30), outline=p_col, width=2)
+        _center_text(draw, center_cx, turn_y, ar(f"الدور: {p_name}"), font_turn, fill=WHITE, shadow_offset=1)
 
-        curr_pos = curr_p.get('position', 0)
-        dest_tile = tiles[curr_pos] if curr_pos < len(tiles) else None
-        if dest_tile:
-            dest_name = clean_arabic(dest_tile.get('name', ''))
-            _center_text(draw, center_cx, cart_top + 160, ar(f"المكان: {dest_name}"), font_sub_title, fill=GOLD_LIGHT, shadow_offset=1)
-
-    panel_y1 = 678
-    panel_y2 = 808
-    panel_w = 440
-    panel_x1 = center_cx - panel_w // 2
-    panel_x2 = center_cx + panel_w // 2
-
+    # C. Compact Lower Panel (Balances Only - No cluttered log text)
+    panel_y1, panel_y2 = 685, 785
+    panel_x1, panel_x2 = center_cx - 210, center_cx + 210
     draw.rounded_rectangle([panel_x1, panel_y1, panel_x2, panel_y2], radius=10, fill=(14, 20, 18, 240), outline=(180, 150, 40), width=2)
-    _center_text(draw, center_cx, panel_y1 + 18, ar("أرصدة المتسابقين"), font_hud_header, fill=GOLD_COLOR, shadow_offset=1)
-
-    row1_y = panel_y1 + 46
-    row2_y = panel_y1 + 72
-    col1_x = panel_x1 + 115
-    col2_x = panel_x1 + 325
 
     coords = [
-        (col1_x, row1_y),
-        (col2_x, row1_y),
-        (col1_x, row2_y),
-        (col2_x, row2_y),
+        (panel_x1 + 105, panel_y1 + 30),
+        (panel_x1 + 310, panel_y1 + 30),
+        (panel_x1 + 105, panel_y1 + 68),
+        (panel_x1 + 310, panel_y1 + 68),
     ]
 
     for p_idx, p in enumerate(players[:4]):
-        p_name = p.get('name', f'لاعب {p_idx+1}')
+        p_name = p.get('name', f'P{p_idx+1}')[:7]
         p_bal = p.get('balance', 0)
         is_bankrupt = p.get('bankrupt', False)
-        is_jail = p.get('in_jail', False)
         p_col = PLAYER_COLORS[p_idx]
         px, py = coords[p_idx]
 
-        draw.ellipse([px - 85, py - 6, px - 71, py + 8], fill=p_col, outline=WHITE)
-        _center_text(draw, px - 78, py + 1, str(p_idx + 1), font_pawn, fill=WHITE)
-
-        if is_bankrupt:
-            entry_text = f"{p_name[:8]}: مفلس"
-            text_col = (150, 150, 150)
-        elif is_jail:
-            entry_text = f"{p_name[:8]}: {p_bal} ج - سجن"
-            text_col = (255, 140, 140)
-        else:
-            entry_text = f"{p_name[:8]}: {p_bal} جنيه"
-            text_col = WHITE
-
+        draw.ellipse([px - 85, py - 7, px - 71, py + 7], fill=p_col, outline=WHITE)
+        entry_text = f"{p_name}: مفلس" if is_bankrupt else f"{p_name}: {p_bal} ج"
+        text_col = (150, 150, 150) if is_bankrupt else WHITE
         _draw_shadow_text(draw, (px - 62, py - 9), ar(entry_text), font_balance, fill=text_col)
-
-    if log_msg:
-        draw.line([panel_x1 + 15, panel_y1 + 95, panel_x2 - 15, panel_y1 + 95], fill=(60, 80, 70), width=1)
-        _center_text(draw, center_cx, panel_y1 + 104, ar(f"آخر حدث: {clean_arabic(log_msg)[:44]}"), font_log, fill=GOLD_LIGHT, shadow_offset=1)
 
     buf = io.BytesIO()
     board_img.save(buf, format="PNG", optimize=True)

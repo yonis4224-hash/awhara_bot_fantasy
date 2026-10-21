@@ -1,6 +1,6 @@
 """
 roulette_cog.py
-نظام الروليت التفاعلي المتقدم لبوت أوهارا (يدعم حتى 50 لاعباً).
+نظام الروليت التفاعلي الاحترافي (واجهة مختصرة، رسائل مدمجة، وإخفاء النقاط والمشتريات).
 """
 
 import asyncio
@@ -13,9 +13,8 @@ from discord.ui import View, Button, Select, Modal, TextInput
 
 from roulette_gif import make_image, download_avatars_concurrently
 from roulette_shop import (
-    RouletteShopView, get_user_data, add_points, get_points,
-    buy_item, has_item, use_item, ITEMS, record_kick, record_win,
-    get_leaderboard
+    RouletteShopView, get_user_data, get_points,
+    has_item, use_item, record_kick, record_win, get_leaderboard
 )
 
 log = logging.getLogger("roulette_cog")
@@ -24,26 +23,13 @@ WAITING_TIME = 27
 MAX_SEATS = 50
 MIN_PLAYERS = 3
 
-HOWTO_TEXT = (
-    f"**1-** انضم في اللعبة عبر الدخول السريع أو اختر مقعدك المفضل (1-{MAX_SEATS}).\n"
-    "**2-** في كل جولة تدور العجلة وتختار لاعباً عشوائياً.\n"
-    "**3-** اللاعب المختار يملك 30 ثانية لاختيار لاعب لطرده من اللعبة.\n"
-    "**4-** يستمر الطرد حتى يتبقى لاعبان، ثم تدور العجلة لتتويج الفائز باللقب و 3 نقاط! 👑"
-)
-
-ITEMS_INFO = (
-    "🛡️ **درع ضد الطرد (18 نقطة):** يحميك تلقائياً من أول محاولة طرد موجهة إليك.\n"
-    "🔄 **طرد عكسي (22 نقطة):** يعكس الضربة ليطرد اللاعب المعتدي بدلاً منك ويمنحك +1 نقطة!\n"
-    "⚡ **طرد ثنائي (25 نقطة):** يتيح لك طرد لاعبين اثنين في نفس دورك باللعبة."
-)
-
 
 def format_players_text(players):
     if not players:
-        return "لا يوجد لاعبين مشاركين حالياً.\nاضغط على الأزرار بالأسفل للانضمام!"
+        return "لا يوجد مشاركون بعد — اضغط **دخول سريع** للانضمام!"
     sorted_players = sorted(players, key=lambda x: x["number"])
     lines = []
-    chunk_size = 2
+    chunk_size = 3  # 3 أعمدة لتقليل طول الرسالة في الشات
     for i in range(0, len(sorted_players), chunk_size):
         chunk = sorted_players[i:i + chunk_size]
         col_parts = [f"`[{p['number']:02d}]` <@{p['id']}>" for p in chunk]
@@ -56,8 +42,8 @@ class ChooseSeatModal(Modal, title="اختيار رقم المقعد 🔢"):
         super().__init__(timeout=60)
         self.game = game
         self.seat_input = TextInput(
-            label=f"رقم المقعد المطلوب (من 1 إلى {MAX_SEATS})",
-            placeholder="مثال: 7 أو 45",
+            label=f"رقم المقعد (1 - {MAX_SEATS})",
+            placeholder="مثال: 7",
             min_length=1,
             max_length=2,
             required=True
@@ -66,19 +52,17 @@ class ChooseSeatModal(Modal, title="اختيار رقم المقعد 🔢"):
 
     async def on_submit(self, interaction: discord.Interaction):
         val = self.seat_input.value.strip()
-        if not val.isdigit():
-            return await interaction.response.send_message("❌ الرجاء إدخال رقم صحيح فقط!", ephemeral=True)
+        if not val.isdigit() or not (1 <= int(val) <= MAX_SEATS):
+            return await interaction.response.send_message(f"❌ اختر رقماً صحيحاً بين 1 و {MAX_SEATS}.", ephemeral=True)
         number = int(val)
-        if number < 1 or number > MAX_SEATS:
-            return await interaction.response.send_message(f"❌ الرجاء اختيار رقم بين 1 و {MAX_SEATS}!", ephemeral=True)
 
         async with self.game.lock:
             if self.game.state != "WAITING" or self.game.cancelled:
-                return await interaction.response.send_message("❌ انتهت فترة التسجيل لهذه الجولة.", ephemeral=True)
+                return await interaction.response.send_message("❌ انتهى وقت التسجيل.", ephemeral=True)
             if any(p["id"] == interaction.user.id for p in self.game.players):
-                return await interaction.response.send_message("❌ أنت مشارك بالفعل في الروليت!", ephemeral=True)
+                return await interaction.response.send_message("❌ أنت مسجل بالفعل!", ephemeral=True)
             if any(p["number"] == number for p in self.game.players):
-                return await interaction.response.send_message(f"❌ المقعد رقم **{number}** محجوز بالفعل! اختر مقعداً آخر أو استخدم الدخول السريع.", ephemeral=True)
+                return await interaction.response.send_message(f"❌ المقعد `{number:02d}` محجوز!", ephemeral=True)
 
             self.game.players.append({
                 "number": number,
@@ -88,7 +72,7 @@ class ChooseSeatModal(Modal, title="اختيار رقم المقعد 🔢"):
                 "avimg": None
             })
 
-        await interaction.response.send_message(f"✅ تم حجز المقعد رقم **[{number:02d}]** بنجاح!", ephemeral=True)
+        await interaction.response.send_message(f"✅ حجزت المقعد `[{number:02d}]`.", ephemeral=True)
         await self.game.request_refresh()
 
 
@@ -97,21 +81,18 @@ class RouletteJoinView(View):
         super().__init__(timeout=None)
         self.game = game
 
-    @discord.ui.button(label="دخول سريع 🎲", style=discord.ButtonStyle.success, row=0)
+    @discord.ui.button(label="دخول سريع", emoji="🎲", style=discord.ButtonStyle.success, row=0)
     async def join_quick(self, interaction: discord.Interaction, button: Button):
         async with self.game.lock:
             if self.game.state != "WAITING" or self.game.cancelled:
-                return await interaction.response.send_message("❌ انتهت فترة التسجيل لهذه الجولة.", ephemeral=True)
+                return await interaction.response.send_message("❌ انتهى وقت التسجيل.", ephemeral=True)
             if any(p["id"] == interaction.user.id for p in self.game.players):
-                return await interaction.response.send_message("❌ أنت مشارك بالفعل! للخروج اضغط على زر 'خروج'.", ephemeral=True)
+                return await interaction.response.send_message("❌ أنت مسجل بالفعل!", ephemeral=True)
             if len(self.game.players) >= MAX_SEATS:
-                return await interaction.response.send_message(f"❌ عدد المقاعد مكتمل ({MAX_SEATS}/{MAX_SEATS})!", ephemeral=True)
+                return await interaction.response.send_message("❌ المقاعد مكتملة!", ephemeral=True)
 
             taken = {p["number"] for p in self.game.players}
             available = [n for n in range(1, MAX_SEATS + 1) if n not in taken]
-            if not available:
-                return await interaction.response.send_message("❌ عدد المقاعد مكتمل!", ephemeral=True)
-
             number = random.choice(available)
             self.game.players.append({
                 "number": number,
@@ -121,49 +102,36 @@ class RouletteJoinView(View):
                 "avimg": None
             })
 
-        await interaction.response.send_message(f"✅ تم تسجيلك بنجاح في المقعد رقم **[{number:02d}]**!", ephemeral=True)
+        await interaction.response.send_message(f"✅ انضممت في المقعد `[{number:02d}]`.", ephemeral=True)
         await self.game.request_refresh()
 
-    @discord.ui.button(label="اختيار مقعد 🔢", style=discord.ButtonStyle.primary, row=0)
+    @discord.ui.button(label="اختر مقعداً", emoji="🔢", style=discord.ButtonStyle.primary, row=0)
     async def choose_seat(self, interaction: discord.Interaction, button: Button):
         if self.game.state != "WAITING" or self.game.cancelled:
-            return await interaction.response.send_message("❌ انتهت فترة التسجيل لهذه الجولة.", ephemeral=True)
+            return await interaction.response.send_message("❌ انتهى وقت التسجيل.", ephemeral=True)
         if any(p["id"] == interaction.user.id for p in self.game.players):
-            return await interaction.response.send_message("❌ أنت مشارك بالفعل في الروليت!", ephemeral=True)
+            return await interaction.response.send_message("❌ أنت مسجل بالفعل!", ephemeral=True)
         if len(self.game.players) >= MAX_SEATS:
-            return await interaction.response.send_message("❌ عدد المقاعد مكتمل!", ephemeral=True)
-
+            return await interaction.response.send_message("❌ المقاعد مكتملة!", ephemeral=True)
         await interaction.response.send_modal(ChooseSeatModal(self.game))
 
-    @discord.ui.button(label="خروج 🚪", style=discord.ButtonStyle.danger, row=0)
+    @discord.ui.button(label="خروج", emoji="🚪", style=discord.ButtonStyle.danger, row=0)
     async def leave_btn(self, interaction: discord.Interaction, button: Button):
         async with self.game.lock:
             if self.game.state != "WAITING" or self.game.cancelled:
-                return await interaction.response.send_message("❌ لا يمكنك الخروج بعد بدء اللعبة.", ephemeral=True)
+                return await interaction.response.send_message("❌ لا يمكن الخروج الآن.", ephemeral=True)
             player = next((p for p in self.game.players if p["id"] == interaction.user.id), None)
             if not player:
-                return await interaction.response.send_message("❌ أنت غير مشارك في اللعبة بالفعل.", ephemeral=True)
-
+                return await interaction.response.send_message("❌ لست مسجلاً في اللعبة.", ephemeral=True)
             self.game.players = [p for p in self.game.players if p["id"] != interaction.user.id]
 
-        await interaction.response.send_message(f"✅ تم خروجك من اللعبة وإخلاء المقعد رقم **[{player['number']:02d}]**.", ephemeral=True)
+        await interaction.response.send_message("✅ خرجت من اللعبة.", ephemeral=True)
         await self.game.request_refresh()
 
-    @discord.ui.button(label="المتجر 🏪", style=discord.ButtonStyle.secondary, row=0)
+    @discord.ui.button(label="المتجر وحقيبتي", emoji="🏪", style=discord.ButtonStyle.secondary, row=0)
     async def shop_btn(self, interaction: discord.Interaction, button: Button):
         view = RouletteShopView(interaction.user)
-        embed = view.build_embed()
-        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
-
-    @discord.ui.button(label="الخواص 📜", style=discord.ButtonStyle.secondary, row=0)
-    async def items_guide_btn(self, interaction: discord.Interaction, button: Button):
-        embed = discord.Embed(
-            title="📜 دليل خواص الروليت التكتيكية",
-            description=ITEMS_INFO,
-            color=0x3498DB
-        )
-        embed.set_footer(text="يمكنك شراء الخواص عبر زر المتجر 🏪 واستخدامها تلقائياً باللعبة!")
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await interaction.response.send_message(embed=view.build_embed(), view=view, ephemeral=True)
 
 
 class DoubleKickSelect(Select):
@@ -172,8 +140,7 @@ class DoubleKickSelect(Select):
         options = [
             discord.SelectOption(
                 label=f"[{p['number']:02d}] {p['username']}"[:100],
-                value=str(p["number"]),
-                description=f"طرد اللاعب رقم {p['number']}"
+                value=str(p["number"])
             )
             for p in subset_players[:25]
         ]
@@ -187,23 +154,21 @@ class DoubleKickSelect(Select):
 
     async def callback(self, interaction: discord.Interaction):
         if interaction.user.id != self.parent_view.winner["id"]:
-            return await interaction.response.send_message("❌ فقط صاحب الدور يمكنه الاختيار!", ephemeral=True)
+            return await interaction.response.send_message("❌ ليس دورك!", ephemeral=True)
 
-        selected_nums = [int(v) for v in self.values]
-        for num in selected_nums:
+        for v in self.values:
+            num = int(v)
             if num not in self.parent_view.selected_targets:
                 self.parent_view.selected_targets.append(num)
 
-        # إذا اختار لاعبين اثنين أو لم يتبق سواهم، ننفذ الطرد الثنائي فوراً
         if len(self.parent_view.selected_targets) >= 2 or len(self.parent_view.others) == 1:
-            final_targets = self.parent_view.selected_targets[:2]
-            self.parent_view.main_view.choice = ("double_kick", final_targets)
+            self.parent_view.main_view.choice = ("double_kick", self.parent_view.selected_targets[:2])
             self.parent_view.main_view.stop()
             self.parent_view.stop()
             await interaction.response.defer()
         else:
             await interaction.response.send_message(
-                f"✅ تم تحديد المقعد `[{selected_nums[0]:02d}]` كهدف أول! اختر الهدف الثاني أو اضغط زر **تأكيد الطرد**.",
+                f"✅ تم تحديد `[{self.parent_view.selected_targets[0]:02d}]`، اختر الهدف الثاني أو اضغط تأكيد.",
                 ephemeral=True
             )
 
@@ -216,33 +181,20 @@ class DoubleKickSelectView(View):
         self.main_view = main_view
         self.selected_targets = []
 
-        self.add_item(DoubleKickSelect(
-            others[:25], self, row=0,
-            placeholder="🎯 اختر لاعباً أو لاعبين (القائمة 1-25)..."
-        ))
+        self.add_item(DoubleKickSelect(others[:25], self, row=0, placeholder="🎯 اختر الهدفين (1-25)..."))
         if len(others) > 25:
-            self.add_item(DoubleKickSelect(
-                others[25:50], self, row=1,
-                placeholder="🎯 اختر لاعباً أو لاعبين (القائمة 26-50)..."
-            ))
+            self.add_item(DoubleKickSelect(others[25:50], self, row=1, placeholder="🎯 اختر الهدفين (26-50)..."))
 
-    @discord.ui.button(label="تأكيد الطرد ⚡", style=discord.ButtonStyle.success, row=2)
+    @discord.ui.button(label="تأكيد", emoji="⚡", style=discord.ButtonStyle.success, row=2)
     async def confirm_btn(self, interaction: discord.Interaction, button: Button):
         if interaction.user.id != self.winner["id"]:
-            return await interaction.response.send_message("❌ فقط صاحب الدور يمكنه الاختيار!", ephemeral=True)
+            return await interaction.response.send_message("❌ ليس دورك!", ephemeral=True)
         if not self.selected_targets:
-            return await interaction.response.send_message("❌ الرجاء اختيار لاعب واحد على الأقل من القائمة أولاً!", ephemeral=True)
+            return await interaction.response.send_message("❌ اختر لاعباً أولاً!", ephemeral=True)
         self.main_view.choice = ("double_kick", self.selected_targets[:2])
         self.main_view.stop()
         self.stop()
         await interaction.response.defer()
-
-    @discord.ui.button(label="إلغاء ↩️", style=discord.ButtonStyle.secondary, row=2)
-    async def cancel(self, interaction: discord.Interaction, button: Button):
-        if interaction.user.id != self.winner["id"]:
-            return await interaction.response.send_message("❌ فقط صاحب الدور يمكنه الاختيار!", ephemeral=True)
-        self.stop()
-        await interaction.response.send_message("↩️ تم إلغاء الطرد الثنائي، يمكنك الاختيار العادي.", ephemeral=True)
 
 
 class KickView(View):
@@ -265,92 +217,91 @@ class KickView(View):
                 btn.callback = self._make_kick_callback(p["number"])
                 self.add_item(btn)
         else:
-            select1_options = [
-                discord.SelectOption(
-                    label=f"[{p['number']:02d}] {p['username']}"[:100],
-                    value=str(p["number"]),
-                    description=f"المقعد رقم {p['number']}"
-                )
-                for p in self.others[:25]
-            ]
             s1 = Select(
-                placeholder="🎯 اختر اللاعب المراد طرده (1-25)...",
-                options=select1_options,
+                placeholder="🎯 اختر لاعباً لطرده (1-25)...",
+                options=[
+                    discord.SelectOption(label=f"[{p['number']:02d}] {p['username']}"[:100], value=str(p["number"]))
+                    for p in self.others[:25]
+                ],
                 row=0
             )
             s1.callback = self._select_callback
             self.add_item(s1)
 
             if len(self.others) > 25:
-                select2_options = [
-                    discord.SelectOption(
-                        label=f"[{p['number']:02d}] {p['username']}"[:100],
-                        value=str(p["number"]),
-                        description=f"المقعد رقم {p['number']}"
-                    )
-                    for p in self.others[25:50]
-                ]
                 s2 = Select(
-                    placeholder="🎯 تابع قائمة اللاعبين (26-50)...",
-                    options=select2_options,
+                    placeholder="🎯 اختر لاعباً لطرده (26-50)...",
+                    options=[
+                        discord.SelectOption(label=f"[{p['number']:02d}] {p['username']}"[:100], value=str(p["number"]))
+                        for p in self.others[25:50]
+                    ],
                     row=1
                 )
                 s2.callback = self._select_callback
                 self.add_item(s2)
 
-        rand_btn = Button(label="🎲 طرد عشوائي", style=discord.ButtonStyle.primary, row=3)
+        rand_btn = Button(label="طرد عشوائي", emoji="🎲", style=discord.ButtonStyle.primary, row=3)
         rand_btn.callback = self._random_kick_callback
         self.add_item(rand_btn)
 
-        with_btn = Button(label="🏳️ انسحاب", style=discord.ButtonStyle.danger, row=3)
+        with_btn = Button(label="انسحاب", emoji="🏳️", style=discord.ButtonStyle.danger, row=3)
         with_btn.callback = self._withdraw_callback
         self.add_item(with_btn)
 
         if has_item(winner["id"], "double_kick"):
-            dk_btn = Button(label="⚡ طرد ثنائي", style=discord.ButtonStyle.success, row=3)
+            dk_btn = Button(label="طرد ثنائي", emoji="⚡", style=discord.ButtonStyle.success, row=3)
             dk_btn.callback = self._double_kick_callback
             self.add_item(dk_btn)
+
+        my_pts_btn = Button(label="رصيدي ومخزوني", emoji="🎒", style=discord.ButtonStyle.secondary, row=3)
+        my_pts_btn.callback = self._check_my_points
+        self.add_item(my_pts_btn)
 
     def _make_kick_callback(self, number):
         async def callback(interaction: discord.Interaction):
             if interaction.user.id != self.winner["id"]:
-                return await interaction.response.send_message("❌ فقط صاحب الدور يمكنه الاختيار!", ephemeral=True)
-            self.choice = ("kick", number)
+                return await interaction.response.send_message("❌ ليس دورك!", ephemeral=True)
+            self.choice = ("kick", number, interaction)
             self.stop()
             await interaction.response.defer()
         return callback
 
     async def _select_callback(self, interaction: discord.Interaction):
         if interaction.user.id != self.winner["id"]:
-            return await interaction.response.send_message("❌ فقط صاحب الدور يمكنه الاختيار!", ephemeral=True)
+            return await interaction.response.send_message("❌ ليس دورك!", ephemeral=True)
         number = int(interaction.data["values"][0])
-        self.choice = ("kick", number)
+        self.choice = ("kick", number, interaction)
         self.stop()
         await interaction.response.defer()
 
     async def _random_kick_callback(self, interaction: discord.Interaction):
         if interaction.user.id != self.winner["id"]:
-            return await interaction.response.send_message("❌ فقط صاحب الدور يمكنه الاختيار!", ephemeral=True)
-        self.choice = ("random_kick", None)
+            return await interaction.response.send_message("❌ ليس دورك!", ephemeral=True)
+        self.choice = ("random_kick", None, interaction)
         self.stop()
         await interaction.response.defer()
 
     async def _withdraw_callback(self, interaction: discord.Interaction):
         if interaction.user.id != self.winner["id"]:
-            return await interaction.response.send_message("❌ فقط صاحب الدور يمكنه الاختيار!", ephemeral=True)
-        self.choice = ("withdraw", None)
+            return await interaction.response.send_message("❌ ليس دورك!", ephemeral=True)
+        self.choice = ("withdraw", None, interaction)
         self.stop()
         await interaction.response.defer()
 
     async def _double_kick_callback(self, interaction: discord.Interaction):
         if interaction.user.id != self.winner["id"]:
-            return await interaction.response.send_message("❌ فقط صاحب الدور يمكنه الاختيار!", ephemeral=True)
+            return await interaction.response.send_message("❌ ليس دورك!", ephemeral=True)
         sub_view = DoubleKickSelectView(self.winner, self.others, self)
-        await interaction.response.send_message(
-            "⚡ **خاصية الطرد الثنائي:** اختر لاعبين اثنين من القائمة أدناه لطردهم في نفس الدور:",
-            view=sub_view,
-            ephemeral=True
+        await interaction.response.send_message("⚡ **اختر لاعبين لطردهم:**", view=sub_view, ephemeral=True)
+
+    async def _check_my_points(self, interaction: discord.Interaction):
+        u = get_user_data(interaction.user.id)
+        inv = u.get("inventory", {})
+        msg = (
+            f"💰 **نقاطك الحالية:** `{u.get('points', 0)}`\n"
+            f"🛡️ درع: `{inv.get('shield', 0)}` | 🔄 عكسي: `{inv.get('reverse_kick', 0)}` | ⚡ ثنائي: `{inv.get('double_kick', 0)}`"
         )
+        await interaction.response.send_message(msg, ephemeral=True)
 
 
 class RouletteGame:
@@ -375,17 +326,10 @@ class RouletteGame:
 
     def build_join_embed(self):
         embed = discord.Embed(
-            title="🎡 لعبة روليت الحظ | Roulette",
+            title=f"🎡 روليت الحظ ({len(self.players)}/{MAX_SEATS})",
+            description=f"{format_players_text(self.players)}\n\n⏳ يبدأ اللعب: **<t:{self.start_timestamp}:R>**",
             color=0xF1C40F
         )
-        embed.description = f"__**قائمة المشاركين:**__\n{format_players_text(self.players)}"
-        embed.add_field(name="📜 طريقة اللعب:", value=HOWTO_TEXT, inline=False)
-        embed.add_field(
-            name="⏳ وقت التسجيل المتبقي:",
-            value=f"**<t:{self.start_timestamp}:R>**\n👥 المشاركين: `{len(self.players)} / {MAX_SEATS}`",
-            inline=False
-        )
-        embed.set_footer(text="انضم الآن عبر الدخول السريع أو اختر مقعدك المفضل!")
         return embed
 
     async def request_refresh(self):
@@ -428,9 +372,8 @@ class RouletteCog(commands.Cog):
 
     @commands.command(name="روليت", aliases=["roulette"])
     async def roulette_cmd(self, ctx):
-        """بدء لعبة روليت الحظ في هذا الروم"""
         if not self._can_manage_events(ctx):
-            return await ctx.send("❌ | فقط المشرفين (Manage Events / Admin) يمكنهم بدء لعبة الروليت.")
+            return await ctx.send("❌ للمشرفين فقط.", delete_after=5)
 
         cid = ctx.channel.id
         if self.is_game_active(cid):
@@ -438,12 +381,12 @@ class RouletteCog(commands.Cog):
             if old and (time.time() - old.created_at) > 600:
                 await self.stop_game(cid)
             else:
-                return await ctx.send("❌ يوجد لعبة روليت نشطة بالفعل في هذا الروم!")
+                return await ctx.send("❌ توجد لعبة نشطة بالفعل!", delete_after=5)
 
         try:
             from bot import has_active_game, get_active_game, register_game
             if has_active_game(cid):
-                return await ctx.send(f"❌ يوجد لعبة **{get_active_game(cid)}** تعمل في هذا الروم بالفعل!")
+                return await ctx.send(f"❌ توجد لعبة **{get_active_game(cid)}** نشطة في الروم!", delete_after=5)
         except Exception:
             pass
 
@@ -457,66 +400,32 @@ class RouletteCog(commands.Cog):
 
         game.task = asyncio.create_task(self._run_game_lifecycle(ctx, game))
 
-    @commands.command(name="متجر", aliases=["shop", "المتجر"])
+    @commands.command(name="متجر", aliases=["shop", "المتجر", "نقاطي", "points", "رصيدي"])
     async def shop_cmd(self, ctx):
-        """فتح متجر خواص الروليت التكتيكية"""
-        view = RouletteShopView(ctx.author)
-        embed = view.build_embed()
-        await ctx.send(embed=embed, view=view)
+        """فتح زر المتجر والنقاط بشكل خاص لكل لاعب دون إزعاج الشات"""
+        view = View(timeout=60)
+        btn = Button(label="فتح المتجر ورصيدي الشخصي", emoji="🏪", style=discord.ButtonStyle.primary)
 
-    @commands.command(name="نقاطي", aliases=["points", "النقاط", "رصيد", "سجلي"])
-    async def points_cmd(self, ctx):
-        """عرض رصيد نقاطك وسجلك ومخزون الخواص"""
-        u = get_user_data(ctx.author.id)
-        pts = u.get("points", 0)
-        total_pts = u.get("total_points_earned", pts)
-        wins = u.get("total_wins", 0)
-        kicks = u.get("total_kicks", 0)
-        inv = u.get("inventory", {})
+        async def _open_ephemeral(interaction: discord.Interaction):
+            shop_view = RouletteShopView(interaction.user)
+            await interaction.response.send_message(embed=shop_view.build_embed(), view=shop_view, ephemeral=True)
 
-        embed = discord.Embed(
-            title="📊 بطاقة سجل ورصيد اللاعب",
-            color=0x2ECC71
-        )
-        embed.set_author(name=ctx.author.display_name, icon_url=ctx.author.display_avatar.url)
-        embed.add_field(name="💰 الرصيد الحالي", value=f"`{pts}` نقطة", inline=True)
-        embed.add_field(name="📜 إجمالي النقاط", value=f"`{total_pts}` نقطة", inline=True)
-        embed.add_field(name="🏆 الانتصارات", value=f"`{wins}` فوز", inline=True)
-        embed.add_field(name="🎯 الطرد الناجح", value=f"`{kicks}` حالة", inline=True)
-
-        inv_text = (
-            f"• 🛡️ درع ضد الطرد: `{inv.get('shield', 0)}`\n"
-            f"• 🔄 طرد عكسي: `{inv.get('reverse_kick', 0)}`\n"
-            f"• ⚡ طرد ثنائي: `{inv.get('double_kick', 0)}`"
-        )
-        embed.add_field(name="🎒 مخزون الخواص", value=inv_text, inline=False)
-        embed.set_footer(text="استخدم .متجر لشراء المزيد من الخواص!")
-        await ctx.send(embed=embed)
+        btn.callback = _open_ephemeral
+        view.add_item(btn)
+        await ctx.send("👇 **اضغط هنا لعرض نقاطك ومشترياتك بشكل خاص:**", view=view, delete_after=60)
 
     @commands.command(name="توب_الروليت", aliases=["توب_روليت", "roulette_top", "top_roulette"])
     async def leaderboard_cmd(self, ctx):
-        """عرض قائمة متصدري لعبة الروليت بالسيرفر"""
         top_list = get_leaderboard(limit=10)
         if not top_list:
-            return await ctx.send("📋 لا توجد بيانات مسجلة في ترتيب الروليت بعد!")
-
-        embed = discord.Embed(
-            title="🏆 لوحة شرف متصدري روليت الحظ",
-            description="ترتيب أفضل اللاعبين بناءً على النقاط والانتصارات الكلية:\n",
-            color=0xF1C40F
-        )
+            return await ctx.send("📋 لا توجد بيانات بعد.")
 
         medals = ["🥇", "🥈", "🥉"]
-        lines = []
-        for idx, u in enumerate(top_list):
-            prefix = medals[idx] if idx < len(medals) else f"`{idx + 1:02d}.`"
-            lines.append(
-                f"{prefix} <@{u['id']}> — **{u['points']}** نقطة "
-                f"(🏆 `{u['wins']}` فوز | 🎯 `{u['kicks']}` طرد)"
-            )
-
-        embed.description += "\n".join(lines)
-        embed.set_footer(text="العب الروليت واطرد خصومك لترتفع في لوحة الشرف!")
+        lines = [
+            f"{medals[i] if i < 3 else f'`{i+1:02d}.`'} <@{u['id']}> — 🏆 `{u['wins']}` فوز | 🎯 `{u['kicks']}` طرد"
+            for i, u in enumerate(top_list)
+        ]
+        embed = discord.Embed(title="🏆 متصدرو الروليت", description="\n".join(lines), color=0xF1C40F)
         await ctx.send(embed=embed)
 
     async def _run_game_lifecycle(self, ctx, game):
@@ -524,11 +433,9 @@ class RouletteCog(commands.Cog):
         try:
             game.join_view = RouletteJoinView(game)
             game.current_view = game.join_view
-            embed = game.build_join_embed()
-            game.main_message = await ctx.send(embed=embed, view=game.join_view)
+            game.main_message = await ctx.send(embed=game.build_join_embed(), view=game.join_view)
 
             await asyncio.sleep(WAITING_TIME)
-
             if game.cancelled:
                 return
 
@@ -541,10 +448,7 @@ class RouletteCog(commands.Cog):
                 pass
 
             if len(game.players) < MIN_PLAYERS:
-                await ctx.send(f"🚫 تم إلغاء اللعبة لعدم وجود **{MIN_PLAYERS}** لاعبين على الأقل.")
-                return
-
-            await ctx.send(f"✅ اكتمل تسجيل اللاعبين ({len(game.players)} لاعبين)! جاري تجهيز العجلة وبدء الجولة الأولى...")
+                return await ctx.send(f"🚫 ألغيت اللعبة لعدم اكتمال `{MIN_PLAYERS}` لاعبين.")
 
             await download_avatars_concurrently(game.players)
 
@@ -553,7 +457,7 @@ class RouletteCog(commands.Cog):
                 await self._run_single_round(ctx, game, round_number)
                 round_number += 1
                 if len(game.players) > 2 and not game.cancelled:
-                    await asyncio.sleep(2)
+                    await asyncio.sleep(1.5)
 
             if not game.cancelled and len(game.players) >= 1:
                 await self._crown_champion(ctx, game)
@@ -561,11 +465,7 @@ class RouletteCog(commands.Cog):
         except asyncio.CancelledError:
             pass
         except Exception as e:
-            log.exception("Error during roulette game lifecycle: %s", e)
-            try:
-                await ctx.send("⚠️ حدث خطأ غير متوقع أثناء تشغيل الروليت وتم إيقاف اللعبة.")
-            except Exception:
-                pass
+            log.exception("Roulette lifecycle error: %s", e)
         finally:
             self.active_games.pop(cid, None)
             try:
@@ -585,20 +485,14 @@ class RouletteCog(commands.Cog):
             highlight=highlight_idx
         )
 
-        content = (
-            f"🎯 **الجولة {round_number}** | المتبقي: `{len(players)}` لاعبين\n"
-            f"المختار بالقرعة: **[{winner['number']:02d}]** — <@{winner['id']}>"
-        )
-        img_file = discord.File(img_buf, filename="roulette.png")
-        await ctx.send(content=content, file=img_file)
-
-        if game.cancelled:
-            return
-
         kick_view = KickView(game, winner, players)
         game.current_view = kick_view
-        prompt_msg = await ctx.send(
-            f"👉 <@{winner['id']}> لديك **30 ثانية** لاختيار لاعب لطرده من اللعبة!",
+
+        # رسالة واحدة مدمجة فيها الصورة والأزرار معاً لتقليل الرسائل في الشات
+        content = f"🎡 **الجولة {round_number}** (`{len(players)}` متبقي) — الدور على **[{winner['number']:02d}]** <@{winner['id']}>"
+        turn_msg = await ctx.send(
+            content=content,
+            file=discord.File(img_buf, filename="roulette.png"),
             view=kick_view
         )
 
@@ -607,7 +501,7 @@ class RouletteCog(commands.Cog):
         for item in kick_view.children:
             item.disabled = True
         try:
-            await prompt_msg.edit(view=kick_view)
+            await turn_msg.edit(view=None)  # إزالة الأزرار بعد انتهاء الدور ليبقى الشات نظيفاً
         except Exception:
             pass
 
@@ -618,56 +512,46 @@ class RouletteCog(commands.Cog):
         others = [p for p in players if p["id"] != winner["id"]]
 
         if not choice:
-            await ctx.send(f"💣 تم طرد <@{winner['id']}> من اللعبة لعدم التفاعل خلال 30 ثانية!")
+            await ctx.send(f"⏰ استُبعد <@{winner['id']}> لعدم التفاعل.")
             game.players = [p for p in game.players if p["id"] != winner["id"]]
             return
 
-        c_type, c_val = choice
+        c_type = choice[0]
+        c_val = choice[1]
+        inter = choice[2] if len(choice) > 2 else None
 
         if c_type == "withdraw":
-            await ctx.send(f"🏳️ قرر <@{winner['id']}> الانسحاب من اللعبة!")
+            await ctx.send(f"🏳️ انسحب <@{winner['id']}> من اللعبة.")
             game.players = [p for p in game.players if p["id"] != winner["id"]]
             return
 
         if c_type in ("kick", "random_kick"):
             is_random = (c_type == "random_kick")
-            if is_random:
-                victim = random.choice(others) if others else None
-            else:
-                victim = next((p for p in players if p["number"] == c_val), None)
+            victim = random.choice(others) if is_random else next((p for p in players if p["number"] == c_val), None)
 
             if not victim:
-                await ctx.send(f"💣 تم استبعاد <@{winner['id']}> من اللعبة لعدم توفر هدف صالح.")
-                game.players = [p for p in game.players if p["id"] != winner["id"]]
                 return
 
-            kick_str = " (عشوائياً)" if is_random else ""
+            icon = "🎲" if is_random else "💣"
+            rand_tag = " عشوائياً" if is_random else ""
 
             if use_item(victim["id"], "reverse_kick"):
-                v_pts = record_kick(victim["id"])
-                await ctx.send(
-                    f"🔄 **طرد عكسي!** حاول <@{winner['id']}> طرد <@{victim['id']}>{kick_str}، "
-                    f"لكن <@{victim['id']}> استخدم **الطرد العكسي 🔄**!\n"
-                    f"انعكست الضربة وطُرد المهاجم <@{winner['id']}> بدلاً منه! "
-                    f"وحصل <@{victim['id']}> على **+1 نقطة** 🎯 (نقاطه: `{v_pts}`)."
-                )
-                game.players = [p for p in game.players if p["id"] != winner["id"]]
+                new_pts = record_kick(victim["id"])
+                await ctx.send(f"🔄 **طرد عكسي!** انعكست ضربة <@{winner['id']}> وطُرد هو بدلاً من <@{victim['id']}>!")
                 return
 
             if use_item(victim["id"], "shield"):
-                await ctx.send(
-                    f"🛡️ **درع ضد الطرد!** حاول <@{winner['id']}> طرد <@{victim['id']}>{kick_str}، "
-                    f"لكن **الدرع 🛡️** حماه وتصدى للهجمة وتم استهلاكه!\n"
-                    f"نجا <@{victim['id']}> وتستمر المنافسة دون أي طرد هذه الجولة."
-                )
+                await ctx.send(f"🛡️ تحطم درع <@{victim['id']}> وحماه من طرد <@{winner['id']}>!")
                 return
 
-            w_pts = record_kick(winner["id"])
-            await ctx.send(
-                f"💣 تم طرد <@{victim['id']}> من اللعبة{kick_str}! "
-                f"وحصل <@{winner['id']}> على **+1 نقطة** 🎯 (نقاطه: `{w_pts}`)."
-            )
+            new_pts = record_kick(winner["id"])
             game.players = [p for p in game.players if p["id"] != victim["id"]]
+            await ctx.send(f"{icon} طرد <@{winner['id']}> اللاعب <@{victim['id']}>{rand_tag}!")
+            if inter:
+                try:
+                    await inter.followup.send(f"🎯 كسبت **+1 نقطة**! (رصيدك: `{new_pts}`)", ephemeral=True)
+                except Exception:
+                    pass
             return
 
         if c_type == "double_kick":
@@ -677,76 +561,45 @@ class RouletteCog(commands.Cog):
                 if not targets:
                     targets = random.sample(others, min(2, len(others))) if others else []
 
-                report = []
-                pts_earned = 0
+                events = []
                 for v in targets:
                     if use_item(v["id"], "reverse_kick"):
-                        v_pts = record_kick(v["id"])
-                        report.append(f"🔄 رد <@{v['id']}> الضربة بطرد عكسي!")
+                        record_kick(v["id"])
                         game.players = [p for p in game.players if p["id"] != winner["id"]]
-                        await ctx.send(
-                            f"⚡ **طرد ثنائي:** حاول <@{winner['id']}> استهداف <@{v['id']}>، "
-                            f"لكن <@{v['id']}> استخدم **الطرد العكسي 🔄** فطرد المهاجم فوراً! وحصل على **+1 نقطة** (نقاطه: `{v_pts}`)."
-                        )
+                        await ctx.send(f"🔄 **طرد عكسي!** ردّ <@{v['id']}> الضربة الثنائية وطرد <@{winner['id']}>!")
                         return
                     elif use_item(v["id"], "shield"):
-                        report.append(f"🛡️ نجا <@{v['id']}> بالدرع!")
+                        events.append(f"🛡️ نجا <@{v['id']}> بالدرع")
                     else:
                         game.players = [p for p in game.players if p["id"] != v["id"]]
-                        report.append(f"💣 طرد <@{v['id']}>")
                         record_kick(winner["id"])
-                        pts_earned += 1
+                        events.append(f"💣 طُرد <@{v['id']}>")
 
-                total_pts = get_points(winner["id"])
-                res_str = " | ".join(report) if report else "لم يصب أحداً"
-                await ctx.send(
-                    f"⚡ **نتائج الطرد الثنائي لـ <@{winner['id']}>:**\n"
-                    f"{res_str}\n"
-                    f"حصل على **+{pts_earned}** نقاط 🎯 (إجمالي نقاطه: `{total_pts}`)."
-                )
+                await ctx.send(f"⚡ **طرد ثنائي من <@{winner['id']}>:** " + " ، ".join(events))
 
     async def _crown_champion(self, ctx, game):
         if len(game.players) == 2:
             players = list(game.players)
             random.shuffle(players)
             champion = players[-1]
-            highlight_idx = len(players) - 1
-
             img_buf = await make_image(
                 [{"number": p["number"], "img": p.get("avimg")} for p in players],
-                highlight=highlight_idx
+                highlight=len(players) - 1
             )
-            content = (
-                "👑 **الجولة الحاسمة والنهائية!**\n"
-                f"اللاعب المختار هو بطل الروليت: **[{champion['number']:02d}]** — <@{champion['id']}>"
+            await ctx.send(
+                content=f"👑 **الجولة النهائية!** الفائز باللقب هو <@{champion['id']}>!",
+                file=discord.File(img_buf, filename="roulette.png")
             )
-            await ctx.send(content=content, file=discord.File(img_buf, filename="roulette.png"))
         elif len(game.players) == 1:
             champion = game.players[0]
+            await ctx.send(f"👑 **انتهت اللعبة!** الفائز باللقب هو <@{champion['id']}>!")
         else:
-            await ctx.send("🏁 انتهت اللعبة دون بقاء أي فائز.")
             return
 
-        c_pts = record_win(champion["id"])
-        embed = discord.Embed(
-            title="🎉 مبروك! فوز بطل الروليت 👑",
-            description=f"استطاع **<@{champion['id']}>** الصمود والفوز باللعبة!\n\n"
-                        f"🏅 **الجائزة:** `+3` نقاط تضاف إلى رصيده!\n"
-                        f"💰 **إجمالي رصيده الحالي:** `{c_pts}` نقطة",
-            color=0xF1C40F
-        )
-        embed.set_thumbnail(url=champion.get("avatar_url", ""))
-        embed.set_footer(text="شكراً لجميع المشاركين على الروح الرياضية! 🎲")
-        await ctx.send(embed=embed)
+        record_win(champion["id"])
 
     def _can_manage_events(self, ctx):
         if not ctx.guild:
             return True
         p = ctx.author.guild_permissions
-        return (
-            p.administrator
-            or p.manage_guild
-            or p.manage_events
-            or p.manage_messages
-            or ctx.author.id == ctx.guild.owner_id
-        )
+        return p.administrator or p.manage_guild or p.manage_events or p.manage_messages or ctx.author.id == ctx.guild.owner_id
