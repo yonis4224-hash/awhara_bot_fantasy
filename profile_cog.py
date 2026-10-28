@@ -1,3 +1,4 @@
+import asyncio
 """
 Profile & Engagement Discord Cog (profile_cog.py)
 Handles automatic message counting, rank card rendering, and leaderboard commands.
@@ -68,7 +69,7 @@ class ProfileCog(commands.Cog):
             avatar_img = await download_avatar_async(avatar_url)
 
             # 4. توليد بطاقة البروفايل بالثيم المناسب
-            card_buf = render_profile_card(avatar_img, user_data, is_admin=is_admin)
+            card_buf = await asyncio.to_thread(render_profile_card, avatar_img, user_data, is_admin=is_admin)
             file = discord.File(fp=card_buf, filename="profile_card.png")
 
             # 5. إرسال البطاقة
