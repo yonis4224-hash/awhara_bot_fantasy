@@ -74,7 +74,7 @@ class TarneebGameMainView(View):
         if not player:
             return await interaction.response.send_message("❌ أنت لست لاعباً في هذه الطاولة!", ephemeral=True)
 
-        hand_img_buf = render_player_hand(player.hand)
+        hand_img_buf = await asyncio.to_thread(render_player_hand, player.hand)
         file = discord.File(fp=hand_img_buf, filename="hand.png")
 
         legal_cards = self.game.get_legal_cards(player.seat) if (self.game.state == 'PLAYING' and self.game.turn_index == player.seat) else player.hand
@@ -327,7 +327,8 @@ class TarneebCog(commands.Cog):
                 'bid': game.current_bid
             }
 
-        table_buf = render_table(
+        table_buf = await asyncio.to_thread(
+            render_table,
             current_trick=game.current_trick,
             tarneeb_suit=game.tarneeb_suit,
             bidder_info=bidder_info,
