@@ -72,7 +72,7 @@ class BasraGameMainView(View):
         if not player:
             return await interaction.response.send_message("❌ أنت لست لاعباً في هذه الطاولة!", ephemeral=True)
 
-        hand_img_buf = render_player_hand(player.hand)
+        hand_img_buf = await asyncio.to_thread(render_player_hand, player.hand)
         file = discord.File(fp=hand_img_buf, filename="basra_hand.png")
 
         curr_p = self.game.get_current_player()
@@ -230,7 +230,8 @@ class BasraCog(commands.Cog):
         for p in game.players:
             players_info.append({'name': p.name, 'score': p.score, 'captured_count': len(p.captured)})
 
-        table_buf = render_basra_table(
+        table_buf = await asyncio.to_thread(
+            render_basra_table,
             ground_cards=game.ground,
             players_info=players_info,
             current_turn_idx=game.turn_index,
