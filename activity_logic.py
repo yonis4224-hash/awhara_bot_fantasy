@@ -13,26 +13,49 @@ if not os.path.exists(os.path.dirname(DATA_PATH)):
 
 # In-memory cooldown tracker to prevent message spam from awarding XP excessively (10s cooldown)
 _user_msg_cooldown = {}
+_DATA_CACHE = None
+_LAST_DISK_SAVE = 0
+_DIRTY = False
 
 def _get_current_week_number():
     """Returns an integer representing the current year-week (e.g. 202635)"""
     gm = time.gmtime()
-    # (year * 100) + week_number
     return (gm.tm_year * 100) + int(time.strftime("%U", gm))
 
 def load_activity_data():
+    global _DATA_CACHE
+    if _DATA_CACHE is not None:
+        return _DATA_CACHE
     if not os.path.exists(DATA_PATH):
-        return {}
+        _DATA_CACHE = {}
+        return _DATA_CACHE
     try:
         with open(DATA_PATH, "r", encoding="utf-8") as f:
-            return json.load(f)
+            _DATA_CACHE = json.load(f)
+            return _DATA_CACHE
     except Exception:
-        return {}
+        _DATA_CACHE = {}
+        return _DATA_CACHE
 
-def save_activity_data(data):
+def save_activity_data(data, force=False):
+    global _DATA_CACHE, _LAST_DISK_SAVE, _DIRTY
+    _DATA_CACHE = data
+    _DIRTY = True
+    now = time.time()
+    if force or (now - _LAST_DISK_SAVE >= 10):
+        _flush_to_disk()
+
+def _flush_to_disk():
+    global _DIRTY, _LAST_DISK_SAVE
+    if not _DIRTY or _DATA_CACHE is None:
+        return
     try:
-        with open(DATA_PATH, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
+        temp_path = DATA_PATH + ".tmp"
+        with open(temp_path, "w", encoding="utf-8") as f:
+            json.dump(_DATA_CACHE, f, ensure_ascii=False)
+        os.replace(temp_path, DATA_PATH)
+        _DIRTY = False
+        _LAST_DISK_SAVE = time.time()
     except Exception as e:
         print(f"Error saving activity data: {e}")
 
