@@ -408,6 +408,12 @@ async def on_message(message):
         return
     await bot.process_commands(message)
 
+@bot.event
+async def on_command_error(ctx, error):
+    if isinstance(error, (commands.CommandNotFound, commands.CheckFailure)):
+        return
+    log.error("Command error in %s: %s", getattr(ctx, "command", "unknown"), error)
+
 @bot.command(name="اوامر", aliases=["أوامر", "ديباجات", "ديباجة", "help", "الاوامر", "commands"])
 async def show_commands(ctx):
     embed = discord.Embed(
@@ -616,4 +622,17 @@ if __name__ == "__main__":
     threading.Thread(target=run_http, daemon=True).start()
     log.info("HTTP health check server running on port %s", os.getenv("PORT", 10000))
 
-    bot.run(TOKEN, log_handler=None)
+    while True:
+        try:
+            bot.run(TOKEN, log_handler=None)
+            break
+        except discord.HTTPException as e:
+            if getattr(e, "status", None) == 429:
+                log.warning("Rate limit / Cloudflare 429 encountered. Sleeping 25s before retry...")
+                time.sleep(25)
+            else:
+                log.error("HTTPException in bot runner: %s. Retrying in 10s...", e)
+                time.sleep(10)
+        except Exception as e:
+            log.error("Fatal error in bot runner: %s. Retrying in 10s...", e)
+            time.sleep(10)
