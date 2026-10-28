@@ -212,7 +212,8 @@ class BankCog(commands.Cog):
             'bankrupt': p.bankrupt
         } for p in game.players]
 
-        board_buf = render_board(
+        board_buf = await asyncio.to_thread(
+            render_board,
             tiles=game.tiles,
             players=players_data,
             current_turn_idx=game.turn_index,
