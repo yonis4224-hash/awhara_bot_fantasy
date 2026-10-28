@@ -622,17 +622,19 @@ if __name__ == "__main__":
     threading.Thread(target=run_http, daemon=True).start()
     log.info("HTTP health check server running on port %s", os.getenv("PORT", 10000))
 
-    while True:
-        try:
-            bot.run(TOKEN, log_handler=None)
-            break
-        except discord.HTTPException as e:
-            if getattr(e, "status", None) == 429:
-                log.warning("Rate limit / Cloudflare 429 encountered. Sleeping 25s before retry...")
-                time.sleep(25)
-            else:
-                log.error("HTTPException in bot runner: %s. Retrying in 10s...", e)
-                time.sleep(10)
-        except Exception as e:
-            log.error("Fatal error in bot runner: %s. Retrying in 10s...", e)
+    import sys
+    try:
+        bot.run(TOKEN, log_handler=None)
+    except discord.HTTPException as e:
+        if getattr(e, "status", None) == 429:
+            log.warning("Rate limit / Cloudflare 429 encountered. Sleeping 30s before clean restart...")
+            time.sleep(30)
+            os.execv(sys.executable, [sys.executable] + sys.argv)
+        else:
+            log.error("HTTPException in bot runner: %s. Restarting in 10s...", e)
             time.sleep(10)
+            os.execv(sys.executable, [sys.executable] + sys.argv)
+    except Exception as e:
+        log.error("Fatal error in bot runner: %s. Restarting in 10s...", e)
+        time.sleep(10)
+        os.execv(sys.executable, [sys.executable] + sys.argv)
