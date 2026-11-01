@@ -248,7 +248,7 @@ class BankCog(commands.Cog):
             await asyncio.sleep(2.0)
             game.ai_play_turn()
 
-    @commands.command(name="_بنك_الحظ", aliases=["_بنك", "_bank", "_المونوبولي"])
+    @commands.command(name="بنك_الحظ", aliases=["بنك", "bank", "المونوبولي", "_بنك", "_bank", "_بنك_الحظ"])
     async def cmd_bank(self, ctx):
         """بدء لعبة بنك الحظ جديدة"""
         if ctx.channel.id in active_bank_games:
