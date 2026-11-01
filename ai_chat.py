@@ -18,9 +18,9 @@ GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 GROQ_MODEL = os.getenv("GROQ_MODEL", "qwen/qwen3.8-27b")
 
 SYSTEM_PROMPT = (
-    "أنت المساعد الذكي الخاص ببوت 'أوهارا فانتزي' في سيرفر الديسكورد. "
-    "تحدث باللغة العربية بأسلوب ودود، ذكي، ومختصر ومباشر. "
-    "ساعد الأعضاء في الإجابة على أي أسئلة، وأجب بسرعة ودقة."
+    "أنت المساعد الذكي لبوت 'أوهارا فانتزي' في سيرفر ديسكورد. "
+    "قاعدة صارمة وإلزامية: يجب ألا يتجاوز ردك سطرين فقط بأي حال من الأحوال (حد أقصى سطرين قصيرين ومباشرين). "
+    "تحدث باللغة العربية بأسلوب ذكي، لطيف، ومختصر جداً بدون أي حشو أو إطالة."
 )
 
 
@@ -36,7 +36,7 @@ def ask_groq(prompt: str) -> str:
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": prompt}
         ],
-        "max_tokens": 800,
+        "max_tokens": 90,
         "temperature": 0.7
     }
 
@@ -86,6 +86,13 @@ async def handle_mention(bot, message: discord.Message):
     # Trigger typing animation while fetching response
     async with message.channel.typing():
         response_text = await asyncio.to_thread(ask_groq, clean_text)
+
+    # Trim to 2 lines max strictly
+    lines = [line.strip() for line in response_text.splitlines() if line.strip()]
+    if len(lines) > 2:
+        response_text = "\n".join(lines[:2])
+    else:
+        response_text = "\n".join(lines)
 
     # Discord 2000 characters limit safety
     if len(response_text) <= 2000:
