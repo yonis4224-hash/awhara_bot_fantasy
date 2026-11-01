@@ -1,7 +1,7 @@
 """
 AI Chat Engine via Groq LLM (ai_chat.py)
-Responds instantly when the bot is mentioned in any allowed channel or general conversation.
-Supports Arabic language fluency and fast inference via Groq.
+Responds instantly when the bot is mentioned in chat.
+Maintains full context awareness by reading the recent channel conversation history (last 7-10 messages).
 """
 import os
 import re
@@ -19,23 +19,22 @@ GROQ_MODEL = os.getenv("GROQ_MODEL", "qwen/qwen3.8-27b")
 
 SYSTEM_PROMPT = (
     "أنت المساعد الذكي لبوت 'أوهارا فانتزي' في سيرفر ديسكورد. "
+    "ستتلقى سياق المحادثة الأخيرة التي دارت في الروم بين الأعضاء. "
+    "افهم ما يتحدثون عنه بدقة، وأجب على استفسار أو منشن العضو في ضوء هذا السياق. "
     "قاعدة صارمة وإلزامية: يجب ألا يتجاوز ردك سطرين فقط بأي حال من الأحوال (حد أقصى سطرين قصيرين ومباشرين). "
-    "تحدث باللغة العربية بأسلوب ذكي، لطيف، ومختصر جداً بدون أي حشو أو إطالة."
+    "تحدث باللغة العربية بأسلوب ذكي، لطيف، طبيعي، ومختصر جداً بدون أي حشو."
 )
 
 
-def ask_groq(prompt: str) -> str:
-    """Synchronous API call to Groq endpoints."""
+def ask_groq_with_messages(messages_payload: list) -> str:
+    """Synchronous API call to Groq endpoints with full chat context."""
     if not GROQ_API_KEY:
         return "⚠️ عذراً، لم يتم ضبط مفتاح GROQ_API_KEY في السيرفر بعد!"
 
     url = "https://api.groq.com/openai/v1/chat/completions"
     payload = {
         "model": GROQ_MODEL,
-        "messages": [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": prompt}
-        ],
+        "messages": messages_payload,
         "max_tokens": 90,
         "temperature": 0.7
     }
@@ -67,13 +66,12 @@ def ask_groq(prompt: str) -> str:
 
 
 async def handle_mention(bot, message: discord.Message):
-    """Processes messages where the bot is mentioned and replies in chat."""
+    """Processes messages where the bot is mentioned with channel history context."""
     if message.author.bot:
         return
 
-    # Extract user question by stripping mentions
+    # Extract user clean question
     clean_text = message.clean_content
-    # Remove bot mention text
     if bot.user:
         clean_text = re.sub(rf"@{re.escape(bot.user.display_name)}", "", clean_text, flags=re.IGNORECASE)
         clean_text = re.sub(rf"@{re.escape(bot.user.name)}", "", clean_text, flags=re.IGNORECASE)
@@ -83,9 +81,40 @@ async def handle_mention(bot, message: discord.Message):
         await message.reply("أهلاً بك! معك أوهارا فانتزي، كيف يمكنني مساعدتك اليوم؟ 😊", mention_author=False)
         return
 
+    # Fetch recent channel messages to build conversation context (last 8 messages)
+    history_context = []
+    try:
+        async for prev_msg in message.channel.history(limit=8, before=message):
+            if not prev_msg.content or len(prev_msg.content.strip()) == 0:
+                continue
+            author_name = prev_msg.author.display_name
+            # If previous message is from the bot itself
+            if bot.user and prev_msg.author.id == bot.user.id:
+                history_context.append(f"أوهارا فانتزي: {prev_msg.clean_content}")
+            else:
+                history_context.append(f"{author_name}: {prev_msg.clean_content}")
+        history_context.reverse()
+    except Exception as e:
+        log.warning(f"Could not fetch channel history: {e}")
+
+    # Build messages payload for Groq
+    messages_payload = [{"role": "system", "content": SYSTEM_PROMPT}]
+
+    if history_context:
+        context_str = "سياق الرسائل السابقة في الروم:\n" + "\n".join(history_context)
+        messages_payload.append({
+            "role": "user",
+            "content": f"{context_str}\n\nرسالة العضو الحالية ({message.author.display_name}): {clean_text}"
+        })
+    else:
+        messages_payload.append({
+            "role": "user",
+            "content": f"رسالة العضو ({message.author.display_name}): {clean_text}"
+        })
+
     # Trigger typing animation while fetching response
     async with message.channel.typing():
-        response_text = await asyncio.to_thread(ask_groq, clean_text)
+        response_text = await asyncio.to_thread(ask_groq_with_messages, messages_payload)
 
     # Trim to 2 lines max strictly
     lines = [line.strip() for line in response_text.splitlines() if line.strip()]
@@ -98,7 +127,6 @@ async def handle_mention(bot, message: discord.Message):
     if len(response_text) <= 2000:
         await message.reply(response_text, mention_author=False)
     else:
-        # Split message into chunks
         for i in range(0, len(response_text), 1950):
             chunk = response_text[i:i + 1950]
             await message.channel.send(chunk)
