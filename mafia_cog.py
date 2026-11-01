@@ -592,7 +592,7 @@ class MafiaCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
 
-    @commands.command(name="مافيا", aliases=["mafia", "المافيا"])
+    @commands.command(name="_مافيا", aliases=["_mafia", "_المافيا"])
     async def cmd_mafia(self, ctx):
         """بدء لعبة مافيا جديدة في الروم"""
         cid = ctx.channel.id

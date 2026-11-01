@@ -276,7 +276,7 @@ class BasraCog(commands.Cog):
             await asyncio.sleep(2.0)
             game.ai_play_turn()
 
-    @commands.command(name="بصرة", aliases=["basra", "البصرة", "بصره", "شكوبا", "scopa"])
+    @commands.command(name="_بصرة", aliases=["_basra", "_البصرة", "_بصره", "_شكوبا", "_scopa"])
     async def cmd_basra(self, ctx):
         """بدء لعبة بصرة / شكوبا جديدة"""
         if ctx.channel.id in active_basra_games:

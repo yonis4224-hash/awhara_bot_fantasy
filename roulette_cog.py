@@ -370,7 +370,7 @@ class RouletteCog(commands.Cog):
             game.task.cancel()
         return True
 
-    @commands.command(name="روليت", aliases=["roulette"])
+    @commands.command(name="_روليت", aliases=["_roulette"])
     async def roulette_cmd(self, ctx):
         if not self._can_manage_events(ctx):
             return await ctx.send("❌ للمشرفين فقط.", delete_after=5)

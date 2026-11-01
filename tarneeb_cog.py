@@ -418,7 +418,7 @@ class TarneebCog(commands.Cog):
                 ai_card = game.ai_play_card(curr_p.seat)
                 game.play_card(curr_p.seat, ai_card)
 
-    @commands.command(name="طرنيب", aliases=["tarneeb", "الطرنيب"])
+    @commands.command(name="_طرنيب", aliases=["_tarneeb", "_الطرنيب"])
     async def cmd_tarneeb(self, ctx):
         """بدء لعبة طرنيب جديدة"""
         if TARNEEB_CHANNEL_ID and ctx.channel.id != TARNEEB_CHANNEL_ID:
