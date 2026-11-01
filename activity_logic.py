@@ -56,6 +56,11 @@ def _flush_to_disk():
         os.replace(temp_path, DATA_PATH)
         _DIRTY = False
         _LAST_DISK_SAVE = time.time()
+        try:
+            from cloud_sync import request_cloud_backup
+            request_cloud_backup()
+        except Exception:
+            pass
     except Exception as e:
         print(f"Error saving activity data: {e}")
 

@@ -57,6 +57,11 @@ def save_data(data):
         with open(temp_path, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
         os.replace(temp_path, DATA_PATH)
+        try:
+            from cloud_sync import request_cloud_backup
+            request_cloud_backup()
+        except Exception:
+            pass
     except Exception as e:
         print(f"Error saving roulette_shop data: {e}")
 

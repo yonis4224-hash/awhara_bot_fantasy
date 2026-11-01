@@ -342,6 +342,13 @@ async def setup_hook():
     log.info("✅ تم تحميل إضافة لعبة الروليت (RouletteCog) بنجاح!")
     await bot.add_cog(MafiaCog(bot))
     log.info("✅ تم تحميل إضافة لعبة المافيا (MafiaCog) بنجاح!")
+    try:
+        import cloud_sync
+        cloud_sync.pull_from_gist()
+        asyncio.create_task(cloud_sync.cloud_sync_background_loop())
+        log.info("☁️ تم تفعيل نظام المزامنة السحابية الذكي (Gist Cloud Sync) بنجاح!")
+    except Exception as e:
+        log.error(f"Failed to start cloud sync: {e}")
 
 bot.setup_hook = setup_hook
 
