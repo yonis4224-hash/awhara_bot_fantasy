@@ -364,6 +364,16 @@ async def on_message(message):
     if message.author.bot:
         return
 
+    # AI Chat on Bot Mention
+    if bot.user and bot.user.mentioned_in(message) and not message.mention_everyone:
+        try:
+            import ai_chat
+            await ai_chat.handle_mention(bot, message)
+            return
+        except Exception as e:
+            log.error(f"Error in AI mention handler: {e}")
+        return
+
     if message.content.strip() == "نحبك":
         ردود_حب = [
             "يا بعد عيني و قلبي, تسلملي يالغالي.",
