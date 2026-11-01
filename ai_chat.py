@@ -134,11 +134,18 @@ async def handle_mention(bot, message: discord.Message):
             chunk = response_text[i:i + 1950]
             await message.channel.send(chunk)
 
+LOVE_SYSTEM_PROMPT = (
+    "أنت بوت 'أوهارا فانتزي' في سيرفر ديسكورد. "
+    "كتب لك عضو في الشات 'نحبك'. رد عليه بالذكاء الاصطناعي برد ليبي عفوي، حنين، ودود، ومليان محبة بالكلمات والعبارات الليبية المشهورة مثل: "
+    "(يا حليلي منك، نعلي منك، نجيه لي يا ربي، كتكوتي الحبوب نجيه عيوني ياربي، قلبي وعمري حتى أني نحبك يقلبي، سلم قلبه السكر، يا روحي وغيرهم من هالكلام الليبي الحنين العفوي). "
+    "خلّ ردك متنوع ومختلف وعفوي في كل مرة، ومباشر وما يفوتش سطرين نهائياً."
+)
+
 async def handle_love_message(bot, message: discord.Message):
-    """Responds dynamically and naturally in Libyan dialect when someone says 'نحبك'."""
-    prompt = f"العضو ({message.author.display_name}) كتب لك توا: '{message.content}'. رد عليه بالليبي بشكل عفوي، واقعي، وذكي وبدون تكلف، ما يفوتش سطرين نهائياً."
+    """Responds dynamically with genuine Libyan affection when someone says 'نحبك'."""
+    prompt = f"العضو ({message.author.display_name}) كتب لك: 'نحبك'. رد عليه بالليبي الحنين العفوي في سطر أو سطرين."
     messages_payload = [
-        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "system", "content": LOVE_SYSTEM_PROMPT},
         {"role": "user", "content": prompt}
     ]
     async with message.channel.typing():
