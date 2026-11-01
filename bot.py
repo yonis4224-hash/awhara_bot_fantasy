@@ -254,6 +254,7 @@ from bank_cog import BankCog
 from basra_cog import BasraCog
 from profile_cog import ProfileCog
 from admin_cog import AdminCog
+from mafia_cog import MafiaCog
 
 active_all_games = {}
 
@@ -262,7 +263,8 @@ GAME_NAMES_AR = {
     "tarneeb": "الطرنيب 🎴",
     "bank": "بنك الحظ 🏰",
     "basra": "البصرة 🃏",
-    "scopa": "البصرة / الشكوبا 🃏"
+    "scopa": "البصرة / الشكوبا 🃏",
+    "mafia": "المافيا 🎭"
 }
 
 def is_admin_or_mod(ctx):
@@ -302,6 +304,12 @@ def find_active_game(channel_id):
             return "tarneeb"
     except Exception:
         pass
+    try:
+        from mafia_cog import active_mafia_games
+        if channel_id in active_mafia_games:
+            return "mafia"
+    except Exception:
+        pass
     return None
 
 def register_game(channel_id, game_type):
@@ -332,6 +340,8 @@ async def setup_hook():
     log.info("✅ تم تحميل إضافة القرارات والإعلانات الإدارية (AdminCog) بنجاح!")
     await bot.add_cog(RouletteCog(bot))
     log.info("✅ تم تحميل إضافة لعبة الروليت (RouletteCog) بنجاح!")
+    await bot.add_cog(MafiaCog(bot))
+    log.info("✅ تم تحميل إضافة لعبة المافيا (MafiaCog) بنجاح!")
 
 bot.setup_hook = setup_hook
 
@@ -551,6 +561,16 @@ async def end_any_game(ctx):
     except Exception:
         pass
 
+    try:
+        from mafia_cog import active_mafia_games
+        m_game = active_mafia_games.pop(cid, None)
+        if m_game:
+            m_game.state = "GAME_OVER"
+            if m_game.task and not m_game.task.done():
+                m_game.task.cancel()
+    except Exception:
+        pass
+
     gname = GAME_NAMES_AR.get(game_type, game_type)
     await ctx.send(f"⏹️ تم إنهاء لعبة **{gname}** في هذا الروم بنجاح بواسطة <@{ctx.author.id}>!")
 
@@ -584,7 +604,12 @@ async def games_cmd(ctx):
         inline=False
     )
     embed.add_field(
-        name="💳 5. البطاقات التعريفية والتفاعل (Profile & Rank Cards)",
+        name="🎭 5. لعبة المافيا (Mafia)",
+        value="• أمر البدء: `.مافيا` أو `!mafia`\n• أدوار متعددة: عراب، طبيب، محقق، حارس، مهرج، مواطن\n• إيقاف الأدمن: `.انهاء` أو `_انهاء_المافيا`",
+        inline=False
+    )
+    embed.add_field(
+        name="💳 6. البطاقات التعريفية والتفاعل (Profile & Rank Cards)",
         value="• عرض بطاقتك: `.بروفايل` أو `.id` أو `!profile` أو `.بطاقتي`\n• توب المتفاعلين: `.توب` أو `!top`\n• متصدري الأسبوع: `.توب_الاسبوع` أو `!weekly`",
         inline=False
     )
