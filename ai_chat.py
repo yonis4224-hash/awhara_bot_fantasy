@@ -133,3 +133,21 @@ async def handle_mention(bot, message: discord.Message):
         for i in range(0, len(response_text), 1950):
             chunk = response_text[i:i + 1950]
             await message.channel.send(chunk)
+
+async def handle_love_message(bot, message: discord.Message):
+    """Responds dynamically and naturally in Libyan dialect when someone says 'نحبك'."""
+    prompt = f"العضو ({message.author.display_name}) كتب لك توا: '{message.content}'. رد عليه بالليبي بشكل عفوي، واقعي، وذكي وبدون تكلف، ما يفوتش سطرين نهائياً."
+    messages_payload = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": prompt}
+    ]
+    async with message.channel.typing():
+        response_text = await asyncio.to_thread(ask_groq_with_messages, messages_payload)
+
+    lines = [line.strip() for line in response_text.splitlines() if line.strip()]
+    if len(lines) > 2:
+        response_text = "\n".join(lines[:2])
+    else:
+        response_text = "\n".join(lines)
+
+    await message.reply(response_text, mention_author=True)
