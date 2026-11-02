@@ -102,7 +102,7 @@ def _save_memories(memories: dict):
 def ask_groq_with_messages(messages_payload: list, max_tokens: int = MAX_COMPLETION_TOKENS, temperature: float = 0.7) -> str:
     """Synchronous API call to Groq endpoints with minimized token footprint."""
     if not GROQ_API_KEY:
-        return "⚠️ عذراً، لم يتم ضبط مفتاح GROQ_API_KEY في السيرفر بعد!"
+        return "كلزق"
 
     url = "https://api.groq.com/openai/v1/chat/completions"
     payload = {
@@ -132,10 +132,10 @@ def ask_groq_with_messages(messages_payload: list, max_tokens: int = MAX_COMPLET
     except urllib.error.HTTPError as e:
         err_msg = e.read().decode("utf-8", errors="ignore")
         log.error(f"Groq API error ({e.code}): {err_msg}")
-        return f"⚠️ واجهت مشكلة في الاتصال بالذكاء الاصطناعي ({e.code})."
+        return "كلزق"
     except Exception as e:
         log.error(f"Groq request exception: {e}")
-        return "⚠️ حدث خطأ أثناء معالجة الرد، يرجى المحاولة لاحقاً."
+        return "كلزق"
 
 
 # ==============================================================================
