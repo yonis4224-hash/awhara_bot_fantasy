@@ -367,9 +367,19 @@ async def on_message(message):
     # AI Chat on Bot Mention or Reply
     is_mentioned = bot.user and bot.user.mentioned_in(message) and not message.mention_everyone
     is_reply_to_bot = False
-    if message.reference and message.reference.resolved and isinstance(message.reference.resolved, discord.Message):
-        if bot.user and message.reference.resolved.author.id == bot.user.id:
+    if message.reference and bot.user:
+        # Check if cached resolved message exists and is from the bot
+        resolved = getattr(message.reference, 'resolved', None)
+        if isinstance(resolved, discord.Message) and resolved.author.id == bot.user.id:
             is_reply_to_bot = True
+        elif message.reference.message_id:
+            # If resolved is None or DeletedReferencedMessage, fetch message to be 100% sure
+            try:
+                ref_msg = await message.channel.fetch_message(message.reference.message_id)
+                if ref_msg and ref_msg.author.id == bot.user.id:
+                    is_reply_to_bot = True
+            except Exception:
+                pass
 
     if is_mentioned or is_reply_to_bot:
         try:
