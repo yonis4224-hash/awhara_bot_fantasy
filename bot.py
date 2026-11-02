@@ -364,8 +364,14 @@ async def on_message(message):
     if message.author.bot:
         return
 
-    # AI Chat on Bot Mention
-    if bot.user and bot.user.mentioned_in(message) and not message.mention_everyone:
+    # AI Chat on Bot Mention or Reply
+    is_mentioned = bot.user and bot.user.mentioned_in(message) and not message.mention_everyone
+    is_reply_to_bot = False
+    if message.reference and message.reference.resolved and isinstance(message.reference.resolved, discord.Message):
+        if bot.user and message.reference.resolved.author.id == bot.user.id:
+            is_reply_to_bot = True
+
+    if is_mentioned or is_reply_to_bot:
         try:
             import ai_chat
             await ai_chat.handle_mention(bot, message)
