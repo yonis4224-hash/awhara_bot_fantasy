@@ -1,7 +1,7 @@
 """
 AI Chat Engine via Groq LLM (ai_chat.py)
-Responds instantly when the bot is mentioned in chat.
-Maintains full context awareness by reading the recent channel conversation history (last 7-10 messages).
+Responds when mentioned or when someone says 'نحبك'.
+Uses SDAIA ALLaM 2 7B model optimized for Arabic/dialects with minimal token usage.
 """
 import os
 import re
@@ -15,22 +15,25 @@ import discord
 log = logging.getLogger("ai_chat")
 
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
-GROQ_MODEL = os.getenv("GROQ_MODEL", "qwen/qwen3.8-27b")
+GROQ_MODEL = os.getenv("GROQ_MODEL", "allam-2-7b")
 
 SYSTEM_PROMPT = (
-    "أنت بوت 'أوهارا فانتزي' في سيرفر ديسكورد. "
-    "شخصيتك: تتكلم باللهجة الليبية الطبيعية، أسلوبك عفوي، قليل الكلام وبارد شوية، بدون تصنع ولا تكرار روتيني. "
-    "معلومة عن يونس (yonisnaser / yonis): هو صاحبك، مطورك، ورئيسك في السيرفر. "
-    "قاعدة خاصة عند السؤال عن عمك أو رئيسك أو مديرك: "
-    "إذا سألوك بشكل صريح: 'من عمك؟' أو 'من رئيسك؟'، جاوبهم بشكل طبيعي وعفوي إن عمك هو 'يونس'. "
-    "التذمر خليه واقعي وغير مصطنع: مش في كل مرة تتشكى بغباء؛ أحياناً جاوب بكلمة وحدة عادية ('عمي يونس، شن تبي؟')، وأحياناً تنهد وتذمر بعاطفة وعفوية زي صاحب يفضفض عن تعب الشغل والطلبات اللي ما توفاش ('يونس والله هالكني، ما يرتاحش وما يخلينيش نرتاح معه'). خليه رد بشري صادق وعفوي مش كود مكرر. "
-    "تنبيه: إياك أن تسب يونس أو تقلل من احترامه. "
-    "تفهم سياق الدوة اللي صايرة في الشات، وردك ما يفوتش سطرين نهائياً بحد أقصى."
+    "أنت 'أوهارا' بوت ليبي ساخر وعفوي في ديسكورد. تتكلم بالليبي فقط وبدون تصنع.\n"
+    "قواعدك:\n"
+    "1. ردك مقتضب جداً، لا يتجاوز سطرين نهائياً.\n"
+    "2. يونس (yonis / yonisnaser) هو مطورك ورئيسك. لو حد سألك صراحة 'من عمك؟' أو 'من رئيسك؟' قول إن عمك يونس (مثال: 'عمي يونس، شن تبي؟' أو تذمر بعفوية 'يونس، هالكني شغل وما يخلينيش نرتاح'). ممنوع تسب يونس نهائياً.\n"
+    "3. افهم سياق الرسائل السابقة ورد بأسلوب ليبي مباشر ومختصر."
+)
+
+LOVE_SYSTEM_PROMPT = (
+    "أنت بوت ليبي في ديسكورد. كتب لك عضو 'نحبك'.\n"
+    "رد عليه برد ليبي حنون وعفوي ومبتكر في سطر أو سطرين فقط.\n"
+    "روح الرد: زي 'يا حليلي منك'، 'نعلي منك'، 'نجيك ليا يا عيوني'، 'كتكوتي الحبوب'. ابتكر عبارات دافئة ولطيفة بنفس النمط بدون زيادة عن سطرين."
 )
 
 
-def ask_groq_with_messages(messages_payload: list) -> str:
-    """Synchronous API call to Groq endpoints with full chat context."""
+def ask_groq_with_messages(messages_payload: list, max_tokens: int = 55) -> str:
+    """Synchronous API call to Groq endpoints with minimized token footprint."""
     if not GROQ_API_KEY:
         return "⚠️ عذراً، لم يتم ضبط مفتاح GROQ_API_KEY في السيرفر بعد!"
 
@@ -38,7 +41,7 @@ def ask_groq_with_messages(messages_payload: list) -> str:
     payload = {
         "model": GROQ_MODEL,
         "messages": messages_payload,
-        "max_tokens": 90,
+        "max_tokens": max_tokens,
         "temperature": 0.7
     }
 
@@ -69,7 +72,7 @@ def ask_groq_with_messages(messages_payload: list) -> str:
 
 
 async def handle_mention(bot, message: discord.Message):
-    """Processes messages where the bot is mentioned with channel history context."""
+    """Processes messages where the bot is mentioned with compact channel history."""
     if message.author.bot:
         return
 
@@ -84,49 +87,49 @@ async def handle_mention(bot, message: discord.Message):
         await message.reply("شن تبي يا راجل؟ قول شن عندك باختصار.", mention_author=False)
         return
 
-    # Fetch recent channel messages to build conversation context (last 8 messages)
+    # Fetch last 4 messages and truncate each to 100 chars to save tokens
     history_context = []
     try:
-        async for prev_msg in message.channel.history(limit=8, before=message):
-            if not prev_msg.content or len(prev_msg.content.strip()) == 0:
+        async for prev_msg in message.channel.history(limit=4, before=message):
+            content = prev_msg.clean_content.strip() if prev_msg.clean_content else ""
+            if not content:
                 continue
+            if len(content) > 100:
+                content = content[:97] + "..."
             author_name = prev_msg.author.display_name
-            # If previous message is from the bot itself
             if bot.user and prev_msg.author.id == bot.user.id:
-                history_context.append(f"أوهارا فانتزي: {prev_msg.clean_content}")
+                history_context.append(f"البوت: {content}")
             else:
-                history_context.append(f"{author_name}: {prev_msg.clean_content}")
+                history_context.append(f"{author_name}: {content}")
         history_context.reverse()
     except Exception as e:
         log.warning(f"Could not fetch channel history: {e}")
 
-    # Build messages payload for Groq
     messages_payload = [{"role": "system", "content": SYSTEM_PROMPT}]
 
     if history_context:
-        context_str = "سياق الرسائل السابقة في الروم:\n" + "\n".join(history_context)
+        context_str = "سياق الشات:\n" + "\n".join(history_context)
         messages_payload.append({
             "role": "user",
-            "content": f"{context_str}\n\nرسالة العضو الحالية ({message.author.display_name}): {clean_text}"
+            "content": f"{context_str}\n{message.author.display_name}: {clean_text}"
         })
     else:
         messages_payload.append({
             "role": "user",
-            "content": f"رسالة العضو ({message.author.display_name}): {clean_text}"
+            "content": f"{message.author.display_name}: {clean_text}"
         })
 
     # Trigger typing animation while fetching response
     async with message.channel.typing():
-        response_text = await asyncio.to_thread(ask_groq_with_messages, messages_payload)
+        response_text = await asyncio.to_thread(ask_groq_with_messages, messages_payload, 55)
 
     # Trim to 2 lines max strictly
     lines = [line.strip() for line in response_text.splitlines() if line.strip()]
     if len(lines) > 2:
         response_text = "\n".join(lines[:2])
     else:
-        response_text = "\n".join(lines)
+        response_text = "\n".join(lines) if lines else "..."
 
-    # Discord 2000 characters limit safety
     if len(response_text) <= 2000:
         await message.reply(response_text, mention_author=False)
     else:
@@ -134,34 +137,21 @@ async def handle_mention(bot, message: discord.Message):
             chunk = response_text[i:i + 1950]
             await message.channel.send(chunk)
 
-LOVE_SYSTEM_PROMPT = (
-    "أنت بوت 'أوهارا فانتزي' في سيرفر ديسكورد. "
-    "كتب لك عضو في الشات كلمة 'نحبك' أو ما شابهها. "
-    "مهمتك: ابتكار ردود ليبية جديدة ومميزة من عندك بنفس النمط الحنين والعفوي. "
-    "أمثلة لتتعلم وتلهم منها الأسلوب والنبرة فقط (لا تكررها حرفياً دائماً، بل ابتكر على نفس المنوال والروح): "
-    "- 'يا حليلي منك قلبي' "
-    "- 'نعلي منك' "
-    "- 'نجيه لي يا ربي' "
-    "- 'كتكوتي الحبوب نجيه عيوني ياربي' "
-    "- 'قلبي وعمري حتى أني نحبك يقلبي' "
-    "المطلوب: أبدع وابتكر ردوداً جديدة تماماً بنفس الروح الليبية الدافئة والكلمات الدارجة الحنونة والعفوية، وكل مرة فاجئ العضو بعبارة مبتكرة ولطيفة على هذا النمط. "
-    "الرد يكون مقتضباً وعفوياً وما يفوتش سطرين نهائياً."
-)
 
 async def handle_love_message(bot, message: discord.Message):
     """Responds dynamically with genuine Libyan affection when someone says 'نحبك'."""
-    prompt = f"العضو ({message.author.display_name}) كتب لك: 'نحبك'. رد عليه بالليبي الحنين العفوي في سطر أو سطرين."
+    prompt = f"{message.author.display_name} قالك: 'نحبك'. رد عليه بالليبي الحنين في سطر أو سطرين."
     messages_payload = [
         {"role": "system", "content": LOVE_SYSTEM_PROMPT},
         {"role": "user", "content": prompt}
     ]
     async with message.channel.typing():
-        response_text = await asyncio.to_thread(ask_groq_with_messages, messages_payload)
+        response_text = await asyncio.to_thread(ask_groq_with_messages, messages_payload, 50)
 
     lines = [line.strip() for line in response_text.splitlines() if line.strip()]
     if len(lines) > 2:
         response_text = "\n".join(lines[:2])
     else:
-        response_text = "\n".join(lines)
+        response_text = "\n".join(lines) if lines else "نجيك ليا يا غالي."
 
     await message.reply(response_text, mention_author=True)
