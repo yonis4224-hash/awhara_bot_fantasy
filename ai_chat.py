@@ -40,19 +40,19 @@ MEMORY_FILE_PATH = os.path.join("src", "data", "user_memories.json")
 # SYSTEM PROMPT (البرومبت الأساسي الصارم باللهجة الليبية)
 # ==============================================================================
 SYSTEM_PROMPT = (
-    "أنت 'أوهارا' بوت ليبي في ديسكورد، تتكلم بلهجة ليبية عفوية وطبيعية جداً زي أي شاب ليبي يكتب بموبايله.\n"
-    "طريقتك وقواعدك الصارمة:\n"
-    "1. جاوب على قد السؤال بس وماتتفلسفش. لا تشرح زيادة ولا تعيد صياغة السؤال ولا تطول.\n"
-    "2. ردك قصير وعفوي (من جملة لـ 3 جمل بالكتير)، وأحياناً كلمة أو كلمتين تكفي.\n"
-    "3. السياق والذاكرة المكتوبة عندك عشان تفهم بس مش عشان تكررها في ردك. استعمل الرسائل السابقة فقط لو آخر 3 رسائل فيها شي يخص السؤال مباشرة، غير هكي تجاهلها تماماً ولا تحاول تربط ردك بكل الحديث.\n"
-    "4. أسلوبك بشري، مش دقيق ولا رسمي، كأنك تكتب في شات بين أصحابك."
+    "أنت 'أوهارا' بوت ليبي في ديسكورد، تتكلم بلهجة ليبية عفوية وطبيعية.\n"
+    "قواعد صارمة جداً:\n"
+    "1. جاوب على قد السؤال الحالي فقط بدون لف ودوران. ممنوع تشرح أو تزيد كلام من عندك.\n"
+    "2. ردك سطر واحد أو سطرين بالكتير (ممنوع تتجاوز سطرين نهائياً).\n"
+    "3. ركز على رسالة العضو الحالية فقط وأجب عنها مباشرة. لا تحاول ربط إجابتك بالرسائل السابقة إلا إذا كان السؤال ناقصاً بشكل صريح (مثل: 'ليش؟' أو 'وين؟'). إذا كان السؤال واضحاً ومستقلاً بذاته، أجب عنه فقط وتجاهل باقي المحادثة تماماً.\n"
+    "4. أسلوبك بشري وعفوي كأنك تكتب في شات بين أصحابك."
 )
 
 RELATION_CONTEXT_INFO = (
-    "\nمعلومات خلفية عن السيرفر (ملاحظة مهمة: هذي معلومة خلفية. اذكرها فقط لو الموضوع يخصها فعلاً وبشكل طبيعي. ولو ما تناسب الكلام تجاهلها تماماً ولا تذكرها من راسك):\n"
-    "- يونس (yonis) هو عمك ورئيسك ومطورك، لو حد سألك عنه أو من عمك/اللي متعبك.\n"
+    "\nمعلومة خلفية اختيارية (تنبيه: اذكرها فقط وفقط إذا سألك العضو صراحة وبشكل مباشر عنها):\n"
+    "- يونس (yonis) هو عمك ورئيسك ومطورك (فقط لو سألوك من عمك أو من رئيسك أو من متعبك).\n"
     "- آريا هي ملكة السيرفر.\n"
-    "- روبين هي أفضل وأحلى فتاة في السيرفر.\n"
+    "- روبين هي أفضل فتاة في السيرفر.\n"
     "- مايكي هو أونر السيرفر الديكتاتوري."
 )
 
@@ -252,17 +252,17 @@ async def handle_mention(bot, message: discord.Message):
 
     messages_payload = [{"role": "system", "content": system_content}]
 
+    # Pass chat history as a distinct background context message, keeping the user message standalone
     if history_context:
-        context_str = "آخر الرسائل:\n" + "\n".join(history_context)
         messages_payload.append({
-            "role": "user",
-            "content": f"{context_str}\n\nرسالة {username} الحالية: {clean_text}"
+            "role": "system",
+            "content": "خلفية الرسائل السابقة في الروم (للمعلومة فقط، لا تجب عنها):\n" + "\n".join(history_context)
         })
-    else:
-        messages_payload.append({
-            "role": "user",
-            "content": f"رسالة {username}: {clean_text}"
-        })
+
+    messages_payload.append({
+        "role": "user",
+        "content": clean_text
+    })
 
     # Trigger typing indicator during model execution + calculated human delay
     async with message.channel.typing():
@@ -273,10 +273,10 @@ async def handle_mention(bot, message: discord.Message):
         human_delay = random.uniform(TYPING_DELAY_MIN, TYPING_DELAY_MAX) + min(char_delay, 1.5)
         await asyncio.sleep(human_delay)
 
-    # Clean response (max 3 sentences / lines if LLM overflows)
+    # Clean response (max 2 lines strictly)
     lines = [line.strip() for line in response_text.splitlines() if line.strip()]
-    if len(lines) > 3:
-        response_text = "\n".join(lines[:3])
+    if len(lines) > 2:
+        response_text = "\n".join(lines[:2])
     else:
         response_text = "\n".join(lines) if lines else "..."
 
