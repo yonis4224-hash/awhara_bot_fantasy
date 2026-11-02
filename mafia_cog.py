@@ -9,10 +9,10 @@ from discord.ext import commands
 
 MIN_PLAYERS = int(os.getenv("MAFIA_MIN_PLAYERS", "5"))
 MAX_PLAYERS = 20
-NIGHT_TIME = 60      # أقصى مدة لليل (ثانية)
-MIN_NIGHT = 20       # أقل مدة لليل حتى لا يُكشف من مات دوره من سرعة الانتهاء
-DISCUSS_TIME = 90    # نقاش النهار
-VOTE_TIME = 60       # التصويت على الاتهام
+NIGHT_TIME = 25      # أقصى مدة لليل (ثانية)
+MIN_NIGHT = 10       # أقل مدة لليل حتى لا يُكشف من مات دوره من سرعة الانتهاء
+DISCUSS_TIME = 25    # نقاش النهار
+VOTE_TIME = 25       # التصويت على الاتهام
 DEFENSE_TIME = 25    # دفاع المتهم
 VERDICT_TIME = 25    # التصويت مذنب/بريء
 
