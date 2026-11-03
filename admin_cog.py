@@ -14,15 +14,10 @@ ADMIN_ROLE_2 = 1137970284402585614
 ADMIN_ROLES = {ADMIN_ROLE_1, ADMIN_ROLE_2}
 
 def is_admin_member(member: discord.Member) -> bool:
-    """التحقق مما إذا كان العضو إدارياً (بصلاحيات ديسكورد أو بالرتب الإدارية)"""
+    """التحقق الحصري من صلاحية الأدمن ستريتر (Administrator) أو مالك السيرفر"""
     if not isinstance(member, discord.Member):
         return False
-    if (member.guild_permissions.administrator or 
-        member.guild_permissions.manage_guild or 
-        member.guild_permissions.manage_messages or 
-        member.id == member.guild.owner_id):
-        return True
-    return any(role.id in ADMIN_ROLES for role in member.roles)
+    return member.guild_permissions.administrator or member.id == member.guild.owner_id
 
 def get_main_admin_embed(author: discord.Member) -> discord.Embed:
     embed = discord.Embed(
@@ -760,7 +755,7 @@ class AdminCog(commands.Cog):
     async def admin_panel(self, ctx):
         """لوحة التحكم الإدارية لاختيار وتجهيز الإعلانات والقرارات الإدارية"""
         if not is_admin_member(ctx.author):
-            return await ctx.send("❌ هذا الأمر مخصص لطاقم الإدارة فقط.")
+            return await ctx.send("❌ هذا الأمر مخصص فقط لمن يمتلكون صلاحية الإدارة (Administrator).")
 
         # حذف رسالة الأمر _اداره تلقائياً للحفاظ على نظافة الروم
         try:
