@@ -104,21 +104,33 @@ class BaseAdminModal(Modal):
 
         values = [child.value.strip() for child in self.children if isinstance(child, TextInput)]
 
-        announcement_text = self.formatter(*values)
+        res = self.formatter(*values)
 
         
 
-        # إرسال الإعلان في القناة مع الصورة المرفقة إن وُجدت
-
-        if self.image_bytes:
-
-            file = discord.File(io.BytesIO(self.image_bytes), filename=self.filename)
-
-            await interaction.channel.send(content=announcement_text, file=file)
-
+        # دعم إرسال Embed مخصص أو نص عادي
+        content_txt = None
+        embed = None
+        if isinstance(res, tuple):
+            content_txt, embed = res
+        elif isinstance(res, discord.Embed):
+            embed = res
         else:
+            content_txt = res
 
-            await interaction.channel.send(announcement_text)
+        # إرسال في القناة مع الصورة المرفقة إن وُجدت
+        if self.image_bytes:
+            file = discord.File(io.BytesIO(self.image_bytes), filename=self.filename)
+            if embed:
+                embed.set_image(url=f"attachment://{self.filename}")
+                await interaction.channel.send(content=content_txt, embed=embed, file=file)
+            else:
+                await interaction.channel.send(content=content_txt, file=file)
+        else:
+            if embed:
+                await interaction.channel.send(content=content_txt, embed=embed)
+            else:
+                await interaction.channel.send(content=content_txt)
 
         
 
@@ -902,27 +914,50 @@ class InvoiceModal(BaseAdminModal):
 
         num_str = invoice_num if invoice_num.startswith("#") else f"#{invoice_num}"
 
-        notes_str = f"\n\n📝 **ملاحظات :**\n{notes}" if notes else ""
-
-        return (
-
-            f"**``` 🔔 فاتورة جديدة 🔔 ```\n\n"
-
-            f"🪅 **رقم العملية :**\n{num_str}\n\n"
-
-            f"⏱️ **التاريخ :**\n{invoice_date}\n\n"
-
-            f"👨🏻‍💼 **العميل :**\n{self.user.mention}\n\n"
-
-            f"📦 **نوع المنتج :**\n{product_type}"
-
-            f"{notes_str}\n\n"
-
-            f"شاكرين تعاملك معنا ونتشرف بخدمتك دائماً! 🌟\n**\n"
-
-            f"{self.user.mention}"
-
+        # تصميم الإمبد المطابق تماماً للصورة المعروضة
+        embed = discord.Embed(
+            title="🔔 فاتورة جديدة",
+            color=discord.Color.from_rgb(235, 10, 10)  # خط جانبي أحمر فاقع مثل الصورة
         )
+
+        # إضافة حقول الفاتورة بنفس التنسيق والايموجيات
+        embed.add_field(
+            name="🪅 رقم العملية",
+            value=f"`{num_str}`",
+            inline=False
+        )
+
+        embed.add_field(
+            name="⏱️ التاريخ",
+            value=f"`{invoice_date}`",
+            inline=False
+        )
+
+        embed.add_field(
+            name="👨🏻‍💼 العميل",
+            value=f"{self.user.mention}",
+            inline=False
+        )
+
+        embed.add_field(
+            name="📦 نوع المنتج",
+            value=f"`{product_type}`",
+            inline=False
+        )
+
+        if notes:
+            embed.add_field(
+                name="📝 ملاحظات",
+                value=notes,
+                inline=False
+            )
+
+        # إذا كان السيرفر له أيقونة نضعها كـ thumbnail في أعلى اليمين
+        if self.user.guild and self.user.guild.icon:
+            embed.set_thumbnail(url=self.user.guild.icon.url)
+
+        # منشن العميل فوق الإمبد لإشعاره
+        return (self.user.mention, embed)
 
 
 
