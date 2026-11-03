@@ -651,80 +651,16 @@ class AdminControlView(View):
 
 
 # ==============================================================================
-# نظام أمر _ارسال التفاعلي مع خيار إرفاق الصورة
+# نظام أمر _ارسال التفاعلي (خاص وخفي 100% للأدمن مع دعم الصور المرفقة)
 # ==============================================================================
 
-class SendPromptView(View):
-    def __init__(self, bot, author_id: int, message_text: str):
-        super().__init__(timeout=120)
-        self.bot = bot
-        self.author_id = author_id
-        self.message_text = message_text
-
-    @discord.ui.button(label="🖼️ إرفاق صورة من الشات الآن", style=discord.ButtonStyle.primary, emoji="📸")
-    async def attach_img_btn(self, interaction: discord.Interaction, button: Button):
-        if interaction.user.id != self.author_id:
-            return await interaction.response.send_message("❌ هذا الزر مخصص لصاحب الأمر فقط.", ephemeral=True)
-
-        button.disabled = True
-        button.label = "⏳ بانتظار إرسال الصورة في الشات..."
-        await interaction.response.edit_message(
-            content=(
-                "📸 **أرسل صورتك الآن كرسالة عادية في هذا الشات** (سيتم التقاطها ونشرها فوراً ثم حذف رسالتك).\n"
-                "⏱️ أمامك 60 ثانية لإرسال الصورة..."
-            ),
-            view=self
-        )
-
-        def check(m):
-            return m.author.id == self.author_id and m.channel.id == interaction.channel_id and len(m.attachments) > 0
-
-        try:
-            user_msg = await self.bot.wait_for("message", timeout=60.0, check=check)
-            attachment = user_msg.attachments[0]
-            if not any(attachment.filename.lower().endswith(ext) for ext in [".png", ".jpg", ".jpeg", ".gif", ".webp"]):
-                await interaction.followup.send("⚠️ الملف المرسل ليس صورة! تم الإلغاء.", ephemeral=True)
-                return
-
-            img_bytes = await attachment.read()
-            try:
-                await user_msg.delete()
-            except Exception:
-                pass
-
-            file = discord.File(io.BytesIO(img_bytes), filename=attachment.filename)
-            await interaction.channel.send(content=self.message_text, file=file)
-
-            try:
-                await interaction.delete_original_response()
-            except Exception:
-                pass
-            self.stop()
-
-        except asyncio.TimeoutError:
-            await interaction.followup.send("⏰ انتهى الوقت المحدد لرفع الصورة. تم إلغاء العملية.", ephemeral=True)
-
-    @discord.ui.button(label="🚀 إرسال بدون صورة مباشرة", style=discord.ButtonStyle.success, emoji="✉️")
-    async def send_direct_btn(self, interaction: discord.Interaction, button: Button):
-        if interaction.user.id != self.author_id:
-            return await interaction.response.send_message("❌ هذا الزر مخصص لصاحب الأمر فقط.", ephemeral=True)
-
-        await interaction.channel.send(content=self.message_text)
-        await interaction.response.edit_message(content="✅ تم إرسال الرسالة بنجاح!", view=None)
-        self.stop()
-
-    @discord.ui.button(label="❌ إلغاء", style=discord.ButtonStyle.danger)
-    async def cancel_btn(self, interaction: discord.Interaction, button: Button):
-        if interaction.user.id != self.author_id:
-            return await interaction.response.send_message("❌ هذا الزر مخصص لصاحب الأمر فقط.", ephemeral=True)
-        await interaction.response.edit_message(content="❌ تم إلغاء الإرسال.", view=None)
-        self.stop()
-
-
 class SendMessageModal(Modal):
-    def __init__(self, bot):
+    def __init__(self, bot, image_bytes: bytes = None, filename: str = None, prompt_msg: discord.Message = None):
         super().__init__(title="📢 إرسال رسالة باسم البوت")
         self.bot = bot
+        self.image_bytes = image_bytes
+        self.filename = filename
+        self.prompt_msg = prompt_msg
         self.msg_content = TextInput(
             label="نص الرسالة المراد نشرها",
             placeholder="اكتب رسالتك هنا بالتفصيل وبأي تنسيق تريده...",
@@ -736,16 +672,22 @@ class SendMessageModal(Modal):
 
     async def on_submit(self, interaction: discord.Interaction):
         text = self.msg_content.value.strip()
-        view = SendPromptView(self.bot, interaction.user.id, text)
-        await interaction.response.send_message(
-            content=(
-                f"📝 **تم حفظ نص رسالتك بنجاح!**\n\n"
-                f"**النص:**\n{text}\n\n"
-                f"هل تريد **إرفاق صورة** مع هذه الرسالة من جهازك، أم **إرسالها مباشرة** كرسالة نصية؟"
-            ),
-            view=view,
-            ephemeral=True
-        )
+        # إرسال الرسالة في القناة باسم البوت
+        if self.image_bytes and self.filename:
+            file = discord.File(io.BytesIO(self.image_bytes), filename=self.filename)
+            await interaction.channel.send(content=text, file=file)
+        else:
+            await interaction.channel.send(content=text)
+
+        # حذف رسالة الزر لتنظيف الشات
+        if self.prompt_msg:
+            try:
+                await self.prompt_msg.delete()
+            except Exception:
+                pass
+
+        # تأكيد خاص وخفي للأدمن فقط
+        await interaction.response.send_message("✅ تم إرسال رسالتك بنجاح!", ephemeral=True)
 
 class AdminCog(commands.Cog):
     def __init__(self, bot):
@@ -774,35 +716,54 @@ class AdminCog(commands.Cog):
 
     @commands.command(name="ارسال", aliases=["إرسال", "نشر", "broadcast", "say"])
     async def send_command(self, ctx):
-        """أمر كتابة وإرسال رسالة وصورة باسم البوت (للأدمن فقط)"""
+        """أمر كتابة وإرسال رسالة وصورة باسم البوت (للأدمن فقط - خاص ومخفي)"""
         if not is_admin_member(ctx.author):
-            return await ctx.send("❌ هذا الأمر مخصص فقط لمن يمتلكون صلاحية الإدارة (Administrator).")
+            try:
+                await ctx.message.delete()
+            except Exception:
+                pass
+            return
 
-        # حذف رسالة الأمر _ارسال للحفاظ على سرية ونظافة الشات
+        # فحص إذا كان العضو أرفق صورة مع رسالة _ارسال مباشرة
+        image_bytes = None
+        filename = None
+        if ctx.message.attachments:
+            att = ctx.message.attachments[0]
+            if any(att.filename.lower().endswith(ext) for ext in [".png", ".jpg", ".jpeg", ".gif", ".webp"]):
+                image_bytes = await att.read()
+                filename = att.filename
+
+        # حذف رسالة الأمر _ارسال فوراً من الشات ليبقى مخفياً ونظيفاً
         try:
             await ctx.message.delete()
         except Exception:
             pass
 
-        class OpenSendModalView(View):
-            def __init__(self, bot, author_id):
+        class OpenModalView(View):
+            def __init__(self, bot, author_id, img_data, fname):
                 super().__init__(timeout=60)
                 self.bot = bot
                 self.author_id = author_id
+                self.img_data = img_data
+                self.fname = fname
+                self.prompt_msg = None
 
-            @discord.ui.button(label="📝 فتح نافذة كتابة الرسالة", style=discord.ButtonStyle.primary, emoji="✍️")
-            async def open_modal(self, interaction: discord.Interaction, button: Button):
+            @discord.ui.button(label="📝 اضغط هنا لكتابة الرسالة", style=discord.ButtonStyle.success, emoji="✍️")
+            async def open_btn(self, interaction: discord.Interaction, button: Button):
                 if interaction.user.id != self.author_id:
-                    return await interaction.response.send_message("❌ هذا الزر لك فقط.", ephemeral=True)
-                modal = SendMessageModal(self.bot)
+                    return await interaction.response.send_message("❌ هذا الخيار مخصص لصاحب الأمر فقط.", ephemeral=True)
+                modal = SendMessageModal(self.bot, image_bytes=self.img_data, filename=self.fname, prompt_msg=self.prompt_msg)
                 await interaction.response.send_modal(modal)
 
-        view = OpenSendModalView(self.bot, ctx.author.id)
-        await ctx.send(
-            f"👋 مرحباً {ctx.author.mention}، اضغط على الزر بالأسفل لكتابة الرسالة التي تريد أن ينشرها البوت:",
+        view = OpenModalView(self.bot, ctx.author.id, image_bytes, filename)
+        img_status = "🖼️ تم التقاط صورتك المرفقة بنجاح!" if image_bytes else "ℹ️ (بدون صورة مرفقة)"
+        prompt_text = f"🔒 {ctx.author.mention} **{img_status}**\nاضغط على الزر بالأسفل لكتابة الرسالة (النافذة ستظهر لك وحدك):"
+        prompt_msg = await ctx.send(
+            prompt_text,
             view=view,
             delete_after=60
         )
+        view.prompt_msg = prompt_msg
 
 async def setup(bot):
     await bot.add_cog(AdminCog(bot))
