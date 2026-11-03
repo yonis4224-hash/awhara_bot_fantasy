@@ -1,6 +1,9 @@
 ﻿import discord
 from discord.ext import commands
 from discord.ui import View, Select, Modal, TextInput, UserSelect, RoleSelect, Button
+from PIL import Image, ImageDraw, ImageFont
+import arabic_reshaper
+from bidi.algorithm import get_display
 import io
 import asyncio
 import aiohttp
@@ -406,11 +409,89 @@ class AnnouncementModal(BaseAdminModal):
             f"@everyone"
         )
 
-# 16. فاتورة جديدة
-class InvoiceModal(BaseAdminModal):
+
+def reshape_ar(text: str) -> str:
+    try:
+        return get_display(arabic_reshaper.reshape(str(text)))
+    except Exception:
+        return str(text)
+
+def generate_invoice_image(invoice_id: str, date_str: str, product_name: str, client_name: str = "") -> io.BytesIO:
+    width, height = 800, 420
+    img = Image.new("RGB", (width, height), color="#1e1f22")
+    draw = ImageDraw.Draw(img)
+
+    # Card background
+    draw.rounded_rectangle([(15, 15), (785, 405)], radius=18, fill="#2b2d31", outline="#5865f2", width=3)
+    # Header bar
+    draw.rounded_rectangle([(15, 15), (785, 95)], radius=18, fill="#232428")
+    draw.rectangle([(15, 75), (785, 95)], fill="#232428")
+
+    font_path = "fonts/NotoSansArabic-Bold.ttf"
+    if not os.path.exists(font_path):
+        font_path = "fonts/Tajawal-Bold.ttf"
+    if not os.path.exists(font_path):
+        font_path = "C:/Windows/Fonts/arial.ttf"
+
+    def load_f(size):
+        try:
+            return ImageFont.truetype(font_path, size)
+        except Exception:
+            return ImageFont.load_default()
+
+    font_title = load_f(36)
+    font_labels = load_f(24)
+    font_vals = load_f(26)
+
+    # Header title
+    title_text = reshape_ar("فاتورة جديدة")
+    draw.text((750, 35), title_text, fill="#5865f2", font=font_title, anchor="ra")
+
+    # Fields
+    # 1. رقم العملية
+    lbl_id = reshape_ar("رقم العملية:")
+    val_id = reshape_ar(f"#{invoice_id}")
+    draw.text((750, 130), lbl_id, fill="#949ba4", font=font_labels, anchor="ra")
+    draw.text((750, 165), val_id, fill="#ffffff", font=font_vals, anchor="ra")
+
+    # 2. التاريخ
+    lbl_date = reshape_ar("التاريخ:")
+    val_date = reshape_ar(date_str)
+    draw.text((420, 130), lbl_date, fill="#949ba4", font=font_labels, anchor="ra")
+    draw.text((420, 165), val_date, fill="#ffffff", font=font_vals, anchor="ra")
+
+    # Line separator
+    draw.line([(40, 225), (760, 225)], fill="#3f4147", width=2)
+
+    # 3. نوع المنتج
+    lbl_prod = reshape_ar("نوع المنتج والطلب:")
+    val_prod = reshape_ar(product_name)
+    draw.text((750, 250), lbl_prod, fill="#949ba4", font=font_labels, anchor="ra")
+    draw.text((750, 290), val_prod, fill="#57f287", font=font_vals, anchor="ra")
+
+    # 4. العميل إن وجد
+    if client_name:
+        lbl_cli = reshape_ar("العميل:")
+        val_cli = reshape_ar(client_name)
+        draw.text((420, 250), lbl_cli, fill="#949ba4", font=font_labels, anchor="ra")
+        draw.text((420, 290), val_cli, fill="#ffffff", font=font_vals, anchor="ra")
+
+    # Footer banner
+    draw.rounded_rectangle([(30, 350), (770, 390)], radius=8, fill="#1e1f22")
+    footer_text = reshape_ar("شكراً لتعاملك معنا ونتشرف بخدمتك دائماً")
+    draw.text((400, 362), footer_text, fill="#b5bac1", font=load_f(18), anchor="ma")
+
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    buf.seek(0)
+    return buf
+
+# 16. فاتورة جديدة (مع إمبد وصورة الفاتورة المولدة تلقائياً)
+class InvoiceModal(Modal):
     def __init__(self, user: discord.Member, panel_message=None):
         self.user = user
-        super().__init__(title="🔔 إنشاء فاتورة جديدة", formatter=self.format_msg, panel_message=panel_message)
+        self.panel_message = panel_message
+        super().__init__(title="🔔 إنشاء فاتورة جديدة")
         self.invoice_num = TextInput(
             label="رقم العملية", 
             placeholder="مثال: #293 أو 293", 
@@ -442,19 +523,49 @@ class InvoiceModal(BaseAdminModal):
         self.add_item(self.product_type)
         self.add_item(self.notes)
 
-    def format_msg(self, invoice_num, invoice_date, product_type, notes=""):
-        num_str = invoice_num if invoice_num.startswith("#") else f"#{invoice_num}"
-        notes_str = f"\n\n📝 **ملاحظات :**\n{notes}" if notes else ""
-        return (
-            f"**``` 🔔 فاتورة جديدة 🔔 ```\n\n"
-            f"🪅 **رقم العملية :**\n{num_str}\n\n"
-            f"⏱️ **التاريخ :**\n{invoice_date}\n\n"
-            f"👨🏻‍💼 **العميل :**\n{self.user.mention}\n\n"
-            f"📦 **نوع المنتج :**\n{product_type}"
-            f"{notes_str}\n\n"
-            f"شاكرين تعاملك معنا ونتشرف بخدمتك دائماً! 🌟\n**\n"
-            f"{self.user.mention}"
+    async def on_submit(self, interaction: discord.Interaction):
+        num_clean = self.invoice_num.value.strip().replace("#", "")
+        date_val = self.invoice_date.value.strip()
+        prod_val = self.product_type.value.strip()
+        notes_val = self.notes.value.strip()
+
+        # توليد صورة الفاتورة في خيط منفصل (non-blocking)
+        client_display = getattr(self.user, "display_name", self.user.name)
+        img_buf = await asyncio.to_thread(
+            generate_invoice_image, 
+            invoice_id=num_clean, 
+            date_str=date_val, 
+            product_name=prod_val, 
+            client_name=client_display
         )
+        file = discord.File(img_buf, filename="invoice.png")
+
+        # إنشاء الإمبد الفاخر المطابق لكود discord.js
+        embed = discord.Embed(
+            title="🔔 فاتورة جديدة",
+            color=0x5865F2,
+            timestamp=discord.utils.utcnow()
+        )
+        embed.add_field(name="🪅 رقم العملية", value=f"`#{num_clean}`", inline=True)
+        embed.add_field(name="⏱️ التاريخ", value=f"`{date_val}`", inline=True)
+        embed.add_field(name="👨🏻‍💼 العميل", value=self.user.mention, inline=True)
+        embed.add_field(name="📦 نوع المنتج", value=f"**{prod_val}**", inline=False)
+        if notes_val:
+            embed.add_field(name="📝 ملاحظات", value=notes_val, inline=False)
+        embed.set_image(url="attachment://invoice.png")
+        embed.set_footer(text="شاكرين تعاملك معنا ونتشرف بخدمتك دائماً! 🌟")
+
+        # إرسال الفاتورة مع منشن العميل كما في الكود
+        await interaction.channel.send(content=self.user.mention, embed=embed, file=file)
+
+        # تنظيف لوحة الإدارة القديمة
+        if self.panel_message:
+            try:
+                await self.panel_message.delete()
+            except Exception:
+                pass
+
+        await interaction.response.send_message("✅ تم تجهيز ونشر الفاتورة وإرفاق صورتها بنجاح!", ephemeral=True)
 
 # ==============================================================================
 # تعريف القرارات وتصنيفها
