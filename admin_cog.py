@@ -1,4 +1,5 @@
-﻿import discord
+import os
+import discord
 
 from discord.ext import commands
 
@@ -118,17 +119,25 @@ class BaseAdminModal(Modal):
         else:
             content_txt = res
 
-        # إرسال في القناة مع الصورة المرفقة إن وُجدت
+        # إرسال في القناة مع الصورة المرفقة وشعار المتجر إن وُجد
+        files_to_send = []
+        if getattr(self, "extra_files", None):
+            files_to_send.extend(self.extra_files)
+
         if self.image_bytes:
             file = discord.File(io.BytesIO(self.image_bytes), filename=self.filename)
+            files_to_send.append(file)
             if embed:
                 embed.set_image(url=f"attachment://{self.filename}")
-                await interaction.channel.send(content=content_txt, embed=embed, file=file)
+
+        if embed:
+            if files_to_send:
+                await interaction.channel.send(content=content_txt, embed=embed, files=files_to_send)
             else:
-                await interaction.channel.send(content=content_txt, file=file)
-        else:
-            if embed:
                 await interaction.channel.send(content=content_txt, embed=embed)
+        else:
+            if files_to_send:
+                await interaction.channel.send(content=content_txt, files=files_to_send)
             else:
                 await interaction.channel.send(content=content_txt)
 
@@ -952,8 +961,12 @@ class InvoiceModal(BaseAdminModal):
                 inline=False
             )
 
-        # إذا كان السيرفر له أيقونة نضعها كـ thumbnail في أعلى اليمين
-        if self.user.guild and self.user.guild.icon:
+        # وضع شعار متجر أوهارا في أعلى يمين الفاتورة (Thumbnail)
+        logo_path = os.path.join("assets", "store_logo.png")
+        if os.path.exists(logo_path):
+            self.extra_files = [discord.File(logo_path, filename="store_logo.png")]
+            embed.set_thumbnail(url="attachment://store_logo.png")
+        elif self.user.guild and self.user.guild.icon:
             embed.set_thumbnail(url=self.user.guild.icon.url)
 
         # منشن العميل فوق الإمبد لإشعاره
