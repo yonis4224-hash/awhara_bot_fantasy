@@ -1,6 +1,10 @@
 ﻿import discord
 from discord.ext import commands
 from discord.ui import View, Select, Modal, TextInput, UserSelect, RoleSelect, Button
+import io
+import asyncio
+import aiohttp
+import datetime
 
 # المعرفات الثابتة المعطاة
 TICKET_CHANNEL_ID = 1499527310011924540
@@ -26,12 +30,12 @@ def get_main_admin_embed(author: discord.Member) -> discord.Embed:
         description=(
             "اختر من القائمة المنسدلة بالأسفل نوع الإعلان أو القرار الإداري الذي تريد نشره.\n"
             "إذا كان القرار يتطلب عضواً أو رتبة، **ستظهر لك قائمة فورية برتب وأعضاء السيرفر لاختيارهم بضغطة زر** بدون الحاجة لنسخ أي تاغ! ✨\n\n"
-            "**📋 الخيارات المتاحة (15 قرار إداري مرتبة بدون أي تداخل):**\n"
+            "**📋 الخيارات المتاحة (16 قرار إداري رسمي وفاتورة مرتبة):**\n"
             "• `1` 🎪 إنشاء فعالية • `2` ⭐ ترقية عضو • `3` 🌟 نجم/أدمن الأسبوع\n"
             "• `4` ⚠️ تحذير إداري • `5` 🔻 سحب رتبة • `6` ⛔ حظر عضو (BAN)\n"
             "• `7` 🛑 طرد عضو (KICK) • `8` 🔇 إسكات مؤقت (MUTE) • `9` 📢 اجتماع إداري\n"
             "• `10` 📥 فتح التقديم • `11` 🔒 إغلاق التقديم • `12` 👑 تكريم متميز\n"
-            "• `13` 🛠️ صيانة وتحديث • `14` 📜 تحديث قوانين • `15` 📢 تعميم عام"
+            "• `13` 🛠️ صيانة وتحديث • `14` 📜 تحديث قوانين • `15` 📢 تعميم عام • `16` 🔔 فاتورة جديدة"
         ),
         color=discord.Color.dark_purple()
     )
@@ -407,6 +411,56 @@ class AnnouncementModal(BaseAdminModal):
             f"@everyone"
         )
 
+# 16. فاتورة جديدة
+class InvoiceModal(BaseAdminModal):
+    def __init__(self, user: discord.Member, panel_message=None):
+        self.user = user
+        super().__init__(title="🔔 إنشاء فاتورة جديدة", formatter=self.format_msg, panel_message=panel_message)
+        self.invoice_num = TextInput(
+            label="رقم العملية", 
+            placeholder="مثال: #293 أو 293", 
+            max_length=50, 
+            required=True
+        )
+        today_str = datetime.date.today().strftime("%Y-%m-%d")
+        self.invoice_date = TextInput(
+            label="التاريخ", 
+            default=today_str, 
+            max_length=50, 
+            required=True
+        )
+        self.product_type = TextInput(
+            label="نوع المنتج", 
+            placeholder="مثال: يوزر رباعي / حساب ديسكورد / نيترو...", 
+            max_length=150, 
+            required=True
+        )
+        self.notes = TextInput(
+            label="ملاحظات أو السعر (اختياري)", 
+            placeholder="أي تفاصيل إضافية أو اتركها فارغة...", 
+            max_length=150, 
+            required=False
+        )
+
+        self.add_item(self.invoice_num)
+        self.add_item(self.invoice_date)
+        self.add_item(self.product_type)
+        self.add_item(self.notes)
+
+    def format_msg(self, invoice_num, invoice_date, product_type, notes=""):
+        num_str = invoice_num if invoice_num.startswith("#") else f"#{invoice_num}"
+        notes_str = f"\n\n📝 **ملاحظات :**\n{notes}" if notes else ""
+        return (
+            f"**``` 🔔 فاتورة جديدة 🔔 ```\n\n"
+            f"🪅 **رقم العملية :**\n{num_str}\n\n"
+            f"⏱️ **التاريخ :**\n{invoice_date}\n\n"
+            f"👨🏻‍💼 **العميل :**\n{self.user.mention}\n\n"
+            f"📦 **نوع المنتج :**\n{product_type}"
+            f"{notes_str}\n\n"
+            f"شاكرين تعاملك معنا ونتشرف بخدمتك دائماً! 🌟\n**\n"
+            f"{self.user.mention}"
+        )
+
 # ==============================================================================
 # تعريف القرارات وتصنيفها
 # ==============================================================================
@@ -428,6 +482,7 @@ ADMIN_DECISIONS = {
     "13": ("🛠️ إعلان صيانة وتحديث", "إعلان صيانة في البوتات أو السيرفر", False, False, MaintenanceModal),
     "14": ("📜 تحديث القوانين والأنظمة", "إشعار الأعضاء بتحديث أو تعديل بند قانوني", False, False, RulesModal),
     "15": ("📢 تعميم إداري عام", "بيان أو توجيه إداري عام لجميع الأعضاء", False, False, AnnouncementModal),
+    "16": ("🔔 فاتورة جديدة", "إصدار فاتورة بيع وتوثيق عملية شراء لعميل", True, False, InvoiceModal),
 }
 
 # ==============================================================================
@@ -599,6 +654,104 @@ class AdminControlView(View):
 # الـ Cog الأساسي
 # ==============================================================================
 
+
+# ==============================================================================
+# نظام أمر _ارسال التفاعلي مع خيار إرفاق الصورة
+# ==============================================================================
+
+class SendPromptView(View):
+    def __init__(self, bot, author_id: int, message_text: str):
+        super().__init__(timeout=120)
+        self.bot = bot
+        self.author_id = author_id
+        self.message_text = message_text
+
+    @discord.ui.button(label="🖼️ إرفاق صورة من الشات الآن", style=discord.ButtonStyle.primary, emoji="📸")
+    async def attach_img_btn(self, interaction: discord.Interaction, button: Button):
+        if interaction.user.id != self.author_id:
+            return await interaction.response.send_message("❌ هذا الزر مخصص لصاحب الأمر فقط.", ephemeral=True)
+
+        button.disabled = True
+        button.label = "⏳ بانتظار إرسال الصورة في الشات..."
+        await interaction.response.edit_message(
+            content=(
+                "📸 **أرسل صورتك الآن كرسالة عادية في هذا الشات** (سيتم التقاطها ونشرها فوراً ثم حذف رسالتك).\n"
+                "⏱️ أمامك 60 ثانية لإرسال الصورة..."
+            ),
+            view=self
+        )
+
+        def check(m):
+            return m.author.id == self.author_id and m.channel.id == interaction.channel_id and len(m.attachments) > 0
+
+        try:
+            user_msg = await self.bot.wait_for("message", timeout=60.0, check=check)
+            attachment = user_msg.attachments[0]
+            if not any(attachment.filename.lower().endswith(ext) for ext in [".png", ".jpg", ".jpeg", ".gif", ".webp"]):
+                await interaction.followup.send("⚠️ الملف المرسل ليس صورة! تم الإلغاء.", ephemeral=True)
+                return
+
+            img_bytes = await attachment.read()
+            try:
+                await user_msg.delete()
+            except Exception:
+                pass
+
+            file = discord.File(io.BytesIO(img_bytes), filename=attachment.filename)
+            await interaction.channel.send(content=self.message_text, file=file)
+
+            try:
+                await interaction.delete_original_response()
+            except Exception:
+                pass
+            self.stop()
+
+        except asyncio.TimeoutError:
+            await interaction.followup.send("⏰ انتهى الوقت المحدد لرفع الصورة. تم إلغاء العملية.", ephemeral=True)
+
+    @discord.ui.button(label="🚀 إرسال بدون صورة مباشرة", style=discord.ButtonStyle.success, emoji="✉️")
+    async def send_direct_btn(self, interaction: discord.Interaction, button: Button):
+        if interaction.user.id != self.author_id:
+            return await interaction.response.send_message("❌ هذا الزر مخصص لصاحب الأمر فقط.", ephemeral=True)
+
+        await interaction.channel.send(content=self.message_text)
+        await interaction.response.edit_message(content="✅ تم إرسال الرسالة بنجاح!", view=None)
+        self.stop()
+
+    @discord.ui.button(label="❌ إلغاء", style=discord.ButtonStyle.danger)
+    async def cancel_btn(self, interaction: discord.Interaction, button: Button):
+        if interaction.user.id != self.author_id:
+            return await interaction.response.send_message("❌ هذا الزر مخصص لصاحب الأمر فقط.", ephemeral=True)
+        await interaction.response.edit_message(content="❌ تم إلغاء الإرسال.", view=None)
+        self.stop()
+
+
+class SendMessageModal(Modal):
+    def __init__(self, bot):
+        super().__init__(title="📢 إرسال رسالة باسم البوت")
+        self.bot = bot
+        self.msg_content = TextInput(
+            label="نص الرسالة المراد نشرها",
+            placeholder="اكتب رسالتك هنا بالتفصيل وبأي تنسيق تريده...",
+            style=discord.TextStyle.paragraph,
+            required=True,
+            max_length=2000
+        )
+        self.add_item(self.msg_content)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        text = self.msg_content.value.strip()
+        view = SendPromptView(self.bot, interaction.user.id, text)
+        await interaction.response.send_message(
+            content=(
+                f"📝 **تم حفظ نص رسالتك بنجاح!**\n\n"
+                f"**النص:**\n{text}\n\n"
+                f"هل تريد **إرفاق صورة** مع هذه الرسالة من جهازك، أم **إرسالها مباشرة** كرسالة نصية؟"
+            ),
+            view=view,
+            ephemeral=True
+        )
+
 class AdminCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -622,6 +775,39 @@ class AdminCog(commands.Cog):
         view.panel_message = panel_msg
         if view.children and isinstance(view.children[0], AdminSelect):
             view.children[0].panel_message = panel_msg
+
+
+    @commands.command(name="ارسال", aliases=["إرسال", "نشر", "broadcast", "say"])
+    async def send_command(self, ctx):
+        """أمر كتابة وإرسال رسالة وصورة باسم البوت (للأدمن فقط)"""
+        if not is_admin_member(ctx.author):
+            return await ctx.send("❌ هذا الأمر مخصص فقط لمن يمتلكون صلاحية الإدارة (Administrator).")
+
+        # حذف رسالة الأمر _ارسال للحفاظ على سرية ونظافة الشات
+        try:
+            await ctx.message.delete()
+        except Exception:
+            pass
+
+        class OpenSendModalView(View):
+            def __init__(self, bot, author_id):
+                super().__init__(timeout=60)
+                self.bot = bot
+                self.author_id = author_id
+
+            @discord.ui.button(label="📝 فتح نافذة كتابة الرسالة", style=discord.ButtonStyle.primary, emoji="✍️")
+            async def open_modal(self, interaction: discord.Interaction, button: Button):
+                if interaction.user.id != self.author_id:
+                    return await interaction.response.send_message("❌ هذا الزر لك فقط.", ephemeral=True)
+                modal = SendMessageModal(self.bot)
+                await interaction.response.send_modal(modal)
+
+        view = OpenSendModalView(self.bot, ctx.author.id)
+        await ctx.send(
+            f"👋 مرحباً {ctx.author.mention}، اضغط على الزر بالأسفل لكتابة الرسالة التي تريد أن ينشرها البوت:",
+            view=view,
+            delete_after=60
+        )
 
 async def setup(bot):
     await bot.add_cog(AdminCog(bot))
