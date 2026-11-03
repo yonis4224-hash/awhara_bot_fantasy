@@ -651,16 +651,17 @@ class AdminControlView(View):
 
 
 # ==============================================================================
-# نظام أمر _ارسال التفاعلي (خاص وخفي 100% للأدمن مع دعم الصور المرفقة)
+# نظام أمر _ارسال التفاعلي (سري وخاص 100% عبر الرسائل الخاصة DM)
 # ==============================================================================
 
 class SendMessageModal(Modal):
-    def __init__(self, bot, image_bytes: bytes = None, filename: str = None, prompt_msg: discord.Message = None):
+    def __init__(self, bot, target_channel: discord.TextChannel, image_bytes: bytes = None, filename: str = None, dm_msg: discord.Message = None):
         super().__init__(title="📢 إرسال رسالة باسم البوت")
         self.bot = bot
+        self.target_channel = target_channel
         self.image_bytes = image_bytes
         self.filename = filename
-        self.prompt_msg = prompt_msg
+        self.dm_msg = dm_msg
         self.msg_content = TextInput(
             label="نص الرسالة المراد نشرها",
             placeholder="اكتب رسالتك هنا بالتفصيل وبأي تنسيق تريده...",
@@ -672,22 +673,29 @@ class SendMessageModal(Modal):
 
     async def on_submit(self, interaction: discord.Interaction):
         text = self.msg_content.value.strip()
-        # إرسال الرسالة في القناة باسم البوت
-        if self.image_bytes and self.filename:
-            file = discord.File(io.BytesIO(self.image_bytes), filename=self.filename)
-            await interaction.channel.send(content=text, file=file)
-        else:
-            await interaction.channel.send(content=text)
 
-        # حذف رسالة الزر لتنظيف الشات
-        if self.prompt_msg:
+        # إرسال الرسالة في القناة الأصلية بالسيرفر باسم البوت
+        try:
+            if self.image_bytes and self.filename:
+                file = discord.File(io.BytesIO(self.image_bytes), filename=self.filename)
+                await self.target_channel.send(content=text, file=file)
+            else:
+                await self.target_channel.send(content=text)
+        except Exception as e:
+            return await interaction.response.send_message(f"❌ حدث خطأ أثناء الإرسال في القناة: {e}", ephemeral=True)
+
+        # تحديث رسالة الخاص للتأكيد
+        if self.dm_msg:
             try:
-                await self.prompt_msg.delete()
+                await self.dm_msg.edit(
+                    content=f"✅ **تم نشر رسالتك بنجاح في القناة:** {self.target_channel.mention}",
+                    view=None
+                )
             except Exception:
                 pass
 
-        # تأكيد خاص وخفي للأدمن فقط
-        await interaction.response.send_message("✅ تم إرسال رسالتك بنجاح!", ephemeral=True)
+        await interaction.response.send_message("✅ تم نشر الرسالة بنجاح في السيرفر!", ephemeral=True)
+
 
 class AdminCog(commands.Cog):
     def __init__(self, bot):
@@ -708,15 +716,13 @@ class AdminCog(commands.Cog):
         embed = get_main_admin_embed(ctx.author)
         view = AdminControlView(ctx.author.id)
         panel_msg = await ctx.send(embed=embed, view=view)
-        # حفظ رسالة اللوحة في الـ View للتمكن من حذفها بعد النشر
         view.panel_message = panel_msg
         if view.children and isinstance(view.children[0], AdminSelect):
             view.children[0].panel_message = panel_msg
 
-
     @commands.command(name="ارسال", aliases=["إرسال", "نشر", "broadcast", "say"])
     async def send_command(self, ctx):
-        """أمر كتابة وإرسال رسالة وصورة باسم البوت (للأدمن فقط - خاص ومخفي)"""
+        """أمر كتابة وإرسال رسالة وصورة باسم البوت (سري وخاص في DM للأدمن فقط)"""
         if not is_admin_member(ctx.author):
             try:
                 await ctx.message.delete()
@@ -724,7 +730,7 @@ class AdminCog(commands.Cog):
                 pass
             return
 
-        # فحص إذا كان العضو أرفق صورة مع رسالة _ارسال مباشرة
+        # فحص إذا كان العضو أرفق صورة مع أمر _ارسال
         image_bytes = None
         filename = None
         if ctx.message.attachments:
@@ -733,37 +739,53 @@ class AdminCog(commands.Cog):
                 image_bytes = await att.read()
                 filename = att.filename
 
-        # حذف رسالة الأمر _ارسال فوراً من الشات ليبقى مخفياً ونظيفاً
+        # حذف رسالة الأمر _ارسال فوراً من الشات لكي لا يظهر أي أثر في السيرفر
         try:
             await ctx.message.delete()
         except Exception:
             pass
 
-        class OpenModalView(View):
-            def __init__(self, bot, author_id, img_data, fname):
-                super().__init__(timeout=60)
+        target_channel = ctx.channel
+
+        class OpenModalDMView(View):
+            def __init__(self, bot, author_id, channel, img_data, fname):
+                super().__init__(timeout=180)
                 self.bot = bot
                 self.author_id = author_id
+                self.channel = channel
                 self.img_data = img_data
                 self.fname = fname
-                self.prompt_msg = None
+                self.dm_msg = None
 
             @discord.ui.button(label="📝 اضغط هنا لكتابة الرسالة", style=discord.ButtonStyle.success, emoji="✍️")
             async def open_btn(self, interaction: discord.Interaction, button: Button):
-                if interaction.user.id != self.author_id:
-                    return await interaction.response.send_message("❌ هذا الخيار مخصص لصاحب الأمر فقط.", ephemeral=True)
-                modal = SendMessageModal(self.bot, image_bytes=self.img_data, filename=self.fname, prompt_msg=self.prompt_msg)
+                modal = SendMessageModal(
+                    self.bot, 
+                    target_channel=self.channel, 
+                    image_bytes=self.img_data, 
+                    filename=self.fname, 
+                    dm_msg=self.dm_msg
+                )
                 await interaction.response.send_modal(modal)
 
-        view = OpenModalView(self.bot, ctx.author.id, image_bytes, filename)
+        view = OpenModalDMView(self.bot, ctx.author.id, target_channel, image_bytes, filename)
         img_status = "🖼️ تم التقاط صورتك المرفقة بنجاح!" if image_bytes else "ℹ️ (بدون صورة مرفقة)"
-        prompt_text = f"🔒 {ctx.author.mention} **{img_status}**\nاضغط على الزر بالأسفل لكتابة الرسالة (النافذة ستظهر لك وحدك):"
-        prompt_msg = await ctx.send(
-            prompt_text,
-            view=view,
-            delete_after=60
+        dm_text = (
+            f"🔒 **طلب إرسال رسالة في سيرفر:** `{ctx.guild.name}`\n"
+            f"📌 **القناة المستهدفة للنشر:** {target_channel.mention}\n"
+            f"{img_status}\n\n"
+            f"اضغط على الزر بالأسفل لكتابة نص الرسالة في النافذة المنبثقة، وسيتم نشرها في القناة باسم البوت:"
         )
-        view.prompt_msg = prompt_msg
+
+        try:
+            dm_msg = await ctx.author.send(dm_text, view=view)
+            view.dm_msg = dm_msg
+        except discord.Forbidden:
+            # في حال كان خاص العضو مغلقاً تماماً
+            warn = await ctx.send(
+                f"⚠️ {ctx.author.mention} لا يمكن للبوت إرسال رسالة في الخاص لك لأن رسائلك الخاصة مغلقة! يرجى فتح الخاص لتتمكن من استخدام الأمر بسرية.",
+                delete_after=10
+            )
 
 async def setup(bot):
     await bot.add_cog(AdminCog(bot))
