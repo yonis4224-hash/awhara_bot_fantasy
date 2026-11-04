@@ -164,763 +164,415 @@ class BaseAdminModal(Modal):
 
 
 # 1. إنشاء فعالية
-
 class EventModal(BaseAdminModal):
-
     def __init__(self, panel_message=None, image_bytes: bytes = None, filename: str = None):
-
         super().__init__(image_bytes=image_bytes, filename=filename, title="🎪 إنشاء إعلان فعالية", formatter=self.format_msg, panel_message=panel_message)
-
         self.name = TextInput(label="اسم الفعالية", placeholder="مثلاً: فعالية ألعاب وتحديات", max_length=100, required=True)
-
         self.desc = TextInput(label="الشرح وتفاصيل الفعالية", placeholder="اكتب نبذة عن الفعالية وكيفية التنافس...", style=discord.TextStyle.paragraph, required=True)
-
         self.time = TextInput(label="الساعة والموعد", placeholder="مثلاً: اليوم الساعة 9:00 مساءً", max_length=100, required=True)
-
         self.prize = TextInput(label="الجوائز (اختياري)", placeholder="مثلاً: رتبة مميزة + نقاط روليت", max_length=100, required=False)
 
-
-
         self.add_item(self.name)
-
         self.add_item(self.desc)
-
         self.add_item(self.time)
-
         self.add_item(self.prize)
 
-
-
     def format_msg(self, name, desc, time_val, prize):
-
-        prize_line = f"\n\n🎁 **الجوائز :** {prize}" if prize else ""
-
-        return (
-
-            f"**``` 🎪 إعلان فعالية جديدة 🎪 ```\n\n"
-
-            f"الفعاليه : {name}\n\n"
-
-            f"الشرح : {desc}\n\n"
-
-            f"طريقة لمشاركه : لتقديم تكت مشاركة توجه إلى <#{TICKET_CHANNEL_ID}>\n\n"
-
-            f"ساعه : {time_val}"
-
-            f"{prize_line}\n\n"
-
-            f"نتمنى التوفيق والروح الرياضية لجميع المشاركين! 🔥\n**\n"
-
-            f"@everyone"
-
+        embed = discord.Embed(
+            title="🎪 إعلان فعالية جديدة",
+            description=f"### {desc}\n\nنتمنى التوفيق والروح الرياضية لجميع المشاركين! 🔥",
+            color=discord.Color.from_rgb(255, 170, 0)
         )
-
+        embed.add_field(name="🎮 اسم الفعالية", value=f"`{name}`", inline=False)
+        embed.add_field(name="⏰ الموعد والساعة", value=f"`{time_val}`", inline=False)
+        embed.add_field(name="🎫 طريقة المشاركة", value=f"لتقديم تكت مشاركة توجه إلى <#{TICKET_CHANNEL_ID}>", inline=False)
+        if prize:
+            embed.add_field(name="🎁 الجوائز", value=f"`{prize}`", inline=False)
+        return embed
 
 
 # 2. ترقية عضو (ترقية إدارية حقيقية منفصلة تماماً)
-
 class PromotionModal(BaseAdminModal):
-
     def __init__(self, user: discord.Member, role: discord.Role, panel_message=None, image_bytes: bytes = None, filename: str = None):
-
         self.user = user
-
         self.role = role
-
         super().__init__(image_bytes=image_bytes, filename=filename, title="⭐ قرار إداري: ترقية عضو", formatter=self.format_msg, panel_message=panel_message)
-
         self.reason = TextInput(label="سبب الترقية", placeholder="مثال: مجتهد ويستحق الترقية لتفاعله ونشاطه المميز", max_length=150, required=True)
-
         self.add_item(self.reason)
 
-
-
     def format_msg(self, reason):
-
-        return (
-
-            f"** ``` ⭐ قرار إداري: ترقية عضو ⭐ ``` \n\n"
-
-            f"👤 الاسم :  {self.user.mention} \n\n"
-
-            f"📋 السبب : {reason}\n\n"
-
-            f"⚖️ القرار : ترقية ومنح رتبة إدارية جديدة \n\n"
-
-            f"🎖️ الرتبة الجديدة :  {self.role.mention} \n\n"
-
-            f"بتوفيق لك ومن الأفضل للأفضل بإذن الله، ومبارك لك! 🎉\n\n"
-
-            f"**\n"
-
-            f"@everyone"
-
+        embed = discord.Embed(
+            title="⭐ قرار إداري: ترقية عضو",
+            description="بالتوفيق لك ومن الأفضل للأفضل بإذن الله، ومبارك لك! 🎉",
+            color=discord.Color.from_rgb(255, 215, 0)
         )
+        embed.add_field(name="👤 العضو المُرقى", value=self.user.mention, inline=False)
+        embed.add_field(name="🎖️ الرتبة الجديدة", value=self.role.mention, inline=False)
+        embed.add_field(name="📋 سبب الترقية", value=reason, inline=False)
+        embed.add_field(name="⚖️ القرار الرسمي", value="ترقية ومنح رتبة إدارية جديدة في السيرفر", inline=False)
+        if self.user.display_avatar:
+            embed.set_thumbnail(url=self.user.display_avatar.url)
+        return embed
 
 
-
-# 3. نجم الأسبوع / أدمن الأسبوع (مستقل تماماً)
-
+# 3. أدمن الأسبوع / نجم الأسبوع
 class StarOfWeekModal(BaseAdminModal):
-
     def __init__(self, user: discord.Member, role: discord.Role, panel_message=None, image_bytes: bytes = None, filename: str = None):
-
         self.user = user
-
         self.role = role
-
         super().__init__(image_bytes=image_bytes, filename=filename, title="🌟 اختيار نجم / أدمن الأسبوع", formatter=self.format_msg, panel_message=panel_message)
-
         self.reason = TextInput(label="سبب الاختيار والتميز", placeholder="مثال: تفاعل استثنائي ومجهود رائع خلال هذا الأسبوع", max_length=150, required=True)
-
         self.add_item(self.reason)
 
-
-
     def format_msg(self, reason):
-
-        return (
-
-            f"** ``` 🌟 أدمن الأسبوع / نجم الأسبوع 🌟 ``` \n\n"
-
-            f"👤 الاسم :  {self.user.mention} \n\n"
-
-            f"✨ آلسبب : {reason}\n\n"
-
-            f"القرار : اعطاء رتبة أدمن الأسبوع \n\n"
-
-            f"رتبه :  {self.role.mention} \n\n"
-
-            f"بتوفيق لك ومن الافضل اللافضل باذن الله ومبروك! 👏\n\n"
-
-            f"**\n"
-
-            f"@everyone"
-
+        embed = discord.Embed(
+            title="🌟 أدمن الأسبوع / نجم الأسبوع",
+            description="نبارك لك هذا التألق المستحق متمنين لك وللجميع دوام التقدم والنجاح! 👑",
+            color=discord.Color.from_rgb(255, 223, 0)
         )
+        embed.add_field(name="👤 النجم المختار", value=self.user.mention, inline=False)
+        embed.add_field(name="🎖️ الرتبة الممنوحة", value=self.role.mention, inline=False)
+        embed.add_field(name="✨ سبب الاختيار", value=reason, inline=False)
+        embed.add_field(name="⚖️ القرار الرسمي", value="منح رتبة وتكريم أدمن الأسبوع", inline=False)
+        if self.user.display_avatar:
+            embed.set_thumbnail(url=self.user.display_avatar.url)
+        return embed
 
 
-
-# 4. تحذير إداري
-
+# 4. إنذار إداري
 class WarningModal(BaseAdminModal):
-
     def __init__(self, user: discord.Member, panel_message=None, image_bytes: bytes = None, filename: str = None):
-
         self.user = user
-
         super().__init__(image_bytes=image_bytes, filename=filename, title="⚠️ تسجيل تحذير إداري", formatter=self.format_msg, panel_message=panel_message)
-
         self.reason = TextInput(label="سبب التحذير", placeholder="سبب مخالفة القوانين بالتفصيل...", style=discord.TextStyle.paragraph, required=True)
-
         self.duration = TextInput(label="المدة / درجة الإنذار", placeholder="مثلاً: 24 ساعة / إنذار ثاني / دائم", max_length=100, required=True)
 
-
-
         self.add_item(self.reason)
-
         self.add_item(self.duration)
 
-
-
     def format_msg(self, reason, duration):
-
-        return (
-
-            f"** ``` ⚠️ إنذار إداري رسمي ⚠️ ``` \n\n"
-
-            f"👤 الاسم : {self.user.mention}\n\n"
-
-            f"📋 السبب : {reason}\n\n"
-
-            f"⏳ المدة : {duration}\n\n"
-
-            f"القرار : تسجيل إنذار رسمي في السجل التأديبي\n\n"
-
-            f"⚠️ تنبيه : نرجو الالتزام بقوانين السيرفر لتجنب العقوبات الأشد.\n\n"
-
-            f"**\n"
-
-            f"@everyone"
-
+        embed = discord.Embed(
+            title="⚠️ إنذار إداري رسمي",
+            description="نرجو الالتزام بقوانين وأنظمة السيرفر لتجنب العقوبات الإدارية الأشد.",
+            color=discord.Color.from_rgb(255, 140, 0)
         )
-
+        embed.add_field(name="👤 العضو المخالف", value=self.user.mention, inline=False)
+        embed.add_field(name="📋 سبب الإنذار", value=reason, inline=False)
+        embed.add_field(name="⏳ المدة / الدرجة", value=f"`{duration}`", inline=False)
+        embed.add_field(name="⚖️ القرار الرسمي", value="تسجيل إنذار رسمي في السجل التأديبي", inline=False)
+        if self.user.display_avatar:
+            embed.set_thumbnail(url=self.user.display_avatar.url)
+        return embed
 
 
 # 5. سحب رتبة / إعفاء إداري
-
 class DemoteModal(BaseAdminModal):
-
     def __init__(self, user: discord.Member, role: discord.Role, panel_message=None, image_bytes: bytes = None, filename: str = None):
-
         self.user = user
-
         self.role = role
-
         super().__init__(image_bytes=image_bytes, filename=filename, title="🔻 سحب رتبة وإعفاء إداري", formatter=self.format_msg, panel_message=panel_message)
-
         self.reason = TextInput(label="السبب وملاحظات الإعفاء", placeholder="سبب سحب الرتبة أو طلب الإعفاء...", style=discord.TextStyle.paragraph, required=True)
-
         self.add_item(self.reason)
-
-
 
     def format_msg(self, reason):
-
-        return (
-
-            f"** ``` 🔻 قرار إداري: سحب رتبة / إعفاء 🔻 ``` \n\n"
-
-            f"👤 الاسم : {self.user.mention}\n\n"
-
-            f"🎖️ الرتبة المسحوبة : {self.role.mention}\n\n"
-
-            f"📋 السبب : {reason}\n\n"
-
-            f"القرار : سحب الرتبة والإعفاء من المهام الإدارية.\n\n"
-
-            f"شاكرين له جهوده السابقة ونتمنى له التوفيق.\n\n"
-
-            f"**\n"
-
-            f"@everyone"
-
+        embed = discord.Embed(
+            title="🔻 قرار إداري: سحب رتبة / إعفاء",
+            description="نشكر العضو على جهوده السابقة ونتمنى له التوفيق دائماً.",
+            color=discord.Color.from_rgb(220, 53, 69)
         )
+        embed.add_field(name="👤 العضو المعفي", value=self.user.mention, inline=False)
+        embed.add_field(name="🎖️ الرتبة المسحوبة", value=self.role.mention, inline=False)
+        embed.add_field(name="📋 السبب والملاحظات", value=reason, inline=False)
+        embed.add_field(name="⚖️ القرار الرسمي", value="سحب الرتبة والإعفاء من المهام الإدارية", inline=False)
+        if self.user.display_avatar:
+            embed.set_thumbnail(url=self.user.display_avatar.url)
+        return embed
 
 
-
-# 6. حظر عضو (Ban)
-
+# 6. حظر عضو (BAN)
 class BanModal(BaseAdminModal):
-
     def __init__(self, user: discord.Member, panel_message=None, image_bytes: bytes = None, filename: str = None):
-
         self.user = user
-
         super().__init__(image_bytes=image_bytes, filename=filename, title="⛔ حظر عضو (BAN)", formatter=self.format_msg, panel_message=panel_message)
-
         self.reason = TextInput(label="سبب الحظر", placeholder="السبب المفصل للحظر...", style=discord.TextStyle.paragraph, required=True)
-
         self.duration = TextInput(label="نوع الحظر / المدة", placeholder="مثلاً: حظر نهائي / 7 أيام", max_length=100, required=True)
 
-
-
         self.add_item(self.reason)
-
         self.add_item(self.duration)
 
-
-
     def format_msg(self, reason, duration):
-
-        return (
-
-            f"** ``` ⛔ قرار إداري: حظر عضو (BAN) ⛔ ``` \n\n"
-
-            f"👤 الاسم : {self.user.mention}\n\n"
-
-            f"📋 السبب : {reason}\n\n"
-
-            f"⏳ المدة : {duration}\n\n"
-
-            f"القرار : حظر العضو من السيرفر لمخالفته الصريحة للأنظمة والقوانين.\n\n"
-
-            f"**\n"
-
-            f"@everyone"
-
+        embed = discord.Embed(
+            title="⛔ قرار إداري: حظر عضو (BAN)",
+            description="تؤكد الإدارة التزامها بتطبيق القوانين لحماية سلامة وراحة المجتمع.",
+            color=discord.Color.from_rgb(180, 0, 0)
         )
+        embed.add_field(name="👤 العضو المحظور", value=self.user.mention, inline=False)
+        embed.add_field(name="📋 سبب الحظر", value=reason, inline=False)
+        embed.add_field(name="⏳ المدة / النوع", value=f"`{duration}`", inline=False)
+        embed.add_field(name="⚖️ القرار الرسمي", value="حظر العضو من السيرفر لمخالفته الصريحة للأنظمة والقوانين", inline=False)
+        if self.user.display_avatar:
+            embed.set_thumbnail(url=self.user.display_avatar.url)
+        return embed
 
 
-
-# 7. طرد عضو (Kick)
-
+# 7. طرد عضو (KICK)
 class KickModal(BaseAdminModal):
-
     def __init__(self, user: discord.Member, panel_message=None, image_bytes: bytes = None, filename: str = None):
-
         self.user = user
-
         super().__init__(image_bytes=image_bytes, filename=filename, title="🛑 طرد عضو (KICK)", formatter=self.format_msg, panel_message=panel_message)
-
         self.reason = TextInput(label="سبب الطرد", placeholder="السبب ومخالفة التعليمات...", style=discord.TextStyle.paragraph, required=True)
-
         self.admin = TextInput(label="الإداري المنفذ", placeholder="اسمك أو منشن الإداري المسؤول", max_length=100, required=True)
 
-
-
         self.add_item(self.reason)
-
         self.add_item(self.admin)
 
-
-
     def format_msg(self, reason, admin):
-
-        return (
-
-            f"** ``` 🛑 قرار إداري: طرد عضو (KICK) 🛑 ``` \n\n"
-
-            f"👤 الاسم : {self.user.mention}\n\n"
-
-            f"📋 السبب : {reason}\n\n"
-
-            f"👮 الإداري المنفذ : {admin}\n\n"
-
-            f"القرار : طرد العضو كإجراء تأديبي.\n\n"
-
-            f"**\n"
-
-            f"@everyone"
-
+        embed = discord.Embed(
+            title="🛑 قرار إداري: طرد عضو (KICK)",
+            description="نؤكد على أهمية احترام القوانين لضمان بقاء السيرفر بيئة آمنة ومريحة للجميع.",
+            color=discord.Color.from_rgb(210, 40, 40)
         )
+        embed.add_field(name="👤 العضو المطرود", value=self.user.mention, inline=False)
+        embed.add_field(name="📋 سبب الطرد", value=reason, inline=False)
+        embed.add_field(name="👮 الإداري المنفذ", value=admin, inline=False)
+        embed.add_field(name="⚖️ القرار الرسمي", value="طرد العضو كإجراء تأديبي", inline=False)
+        if self.user.display_avatar:
+            embed.set_thumbnail(url=self.user.display_avatar.url)
+        return embed
 
 
-
-# 8. إسكات مؤقت (Mute)
-
+# 8. إسكات مؤقت (MUTE)
 class MuteModal(BaseAdminModal):
-
     def __init__(self, user: discord.Member, panel_message=None, image_bytes: bytes = None, filename: str = None):
-
         self.user = user
-
         super().__init__(image_bytes=image_bytes, filename=filename, title="🔇 إسكات مؤقت (MUTE)", formatter=self.format_msg, panel_message=panel_message)
-
         self.reason = TextInput(label="سبب الإسكات", placeholder="مثلاً: سبام / ألفاظ غير لائقة...", style=discord.TextStyle.paragraph, required=True)
-
         self.duration = TextInput(label="مدة الإسكات", placeholder="مثلاً: ساعتين / 24 ساعة", max_length=100, required=True)
 
-
-
         self.add_item(self.reason)
-
         self.add_item(self.duration)
 
-
-
     def format_msg(self, reason, duration):
-
-        return (
-
-            f"** ``` 🔇 قرار إداري: إسكات مؤقت (MUTE) 🔇 ``` \n\n"
-
-            f"👤 الاسم : {self.user.mention}\n\n"
-
-            f"📋 السبب : {reason}\n\n"
-
-            f"⏳ المدة : {duration}\n\n"
-
-            f"القرار : كتم العضو ومنعه من الكتابة والتحدث لحين انقضاء المدة.\n\n"
-
-            f"**\n"
-
-            f"@everyone"
-
+        embed = discord.Embed(
+            title="🔇 قرار إداري: إسكات مؤقت (MUTE)",
+            description="يرجى الالتزام بآداب الحديث والتواصل في رومات السيرفر.",
+            color=discord.Color.from_rgb(108, 117, 125)
         )
-
+        embed.add_field(name="👤 العضو المكتوم", value=self.user.mention, inline=False)
+        embed.add_field(name="📋 سبب الإسكات", value=reason, inline=False)
+        embed.add_field(name="⏳ مدة الإسكات", value=f"`{duration}`", inline=False)
+        embed.add_field(name="⚖️ القرار الرسمي", value="كتم العضو ومنعه من الكتابة والتحدث لحين انقضاء المدة", inline=False)
+        if self.user.display_avatar:
+            embed.set_thumbnail(url=self.user.display_avatar.url)
+        return embed
 
 
 # 9. اجتماع إداري
-
 class MeetingModal(BaseAdminModal):
-
     def __init__(self, panel_message=None, image_bytes: bytes = None, filename: str = None):
-
         super().__init__(image_bytes=image_bytes, filename=filename, title="📢 دعوة اجتماع إداري", formatter=self.format_msg, panel_message=panel_message)
-
         self.title_input = TextInput(label="موضوع الاجتماع", placeholder="مثلاً: مناقشة خطة الفعاليات وتطوير السيرفر", max_length=100, required=True)
-
         self.time = TextInput(label="الموعد والوقت", placeholder="مثلاً: غداً الساعة 10:00 مساءً", max_length=100, required=True)
-
         self.roles = TextInput(label="الرتب المطلوبة للحضور", placeholder="مثلاً: جميع الإداريين / المشرفين", max_length=100, required=True)
-
         self.topics = TextInput(label="أهم المحاور", placeholder="اكتب المحاور أو جدول الأعمال باختصار...", style=discord.TextStyle.paragraph, required=True)
 
-
-
         self.add_item(self.title_input)
-
         self.add_item(self.time)
-
         self.add_item(self.roles)
-
         self.add_item(self.topics)
 
-
-
     def format_msg(self, title, time_val, roles, topics):
-
-        return (
-
-            f"** ``` 📢 إعلان: اجتماع إداري هام 📢 ``` \n\n"
-
-            f"📌 الموضوع : {title}\n\n"
-
-            f"⏰ الموعد : {time_val}\n\n"
-
-            f"👥 الرتب المطلوبة : {roles}\n\n"
-
-            f"📝 أهم المحاور :\n{topics}\n\n"
-
-            f"⚠️ تنبيه : الحضور إجباري ومن يتعذر عليه إبلاغ المسؤول مسبقاً.\n\n"
-
-            f"**\n"
-
-            f"@everyone"
-
+        embed = discord.Embed(
+            title="📢 إعلان: اجتماع إداري هام",
+            description="⚠️ **تنبيه:** الحضور إجباري للرتب المعنية، ومن يتعذر عليه الحضور يرجى إبلاغ الإدارة مسبقاً.",
+            color=discord.Color.from_rgb(0, 123, 255)
         )
-
+        embed.add_field(name="📌 موضوع الاجتماع", value=f"`{title}`", inline=False)
+        embed.add_field(name="⏰ الموعد والوقت", value=f"`{time_val}`", inline=False)
+        embed.add_field(name="👥 الرتب المطلوبة", value=f"`{roles}`", inline=False)
+        embed.add_field(name="📝 أهم المحاور", value=topics, inline=False)
+        return embed
 
 
 # 10. فتح التقديم للإدارة
-
 class ApplyOpenModal(BaseAdminModal):
-
     def __init__(self, panel_message=None, image_bytes: bytes = None, filename: str = None):
-
         super().__init__(image_bytes=image_bytes, filename=filename, title="🌟 فتح باب التقديم للإدارة", formatter=self.format_msg, panel_message=panel_message)
-
-        self.roles = TextInput(label="الرتب والأقسام المتاحة", placeholder="مثلاً: مشرف شات / مشرف فعاليات", max_length=100, required=True)
-
-        self.reqs = TextInput(label="الشروط المطلوبة", placeholder="التفاعل، اللباقة، الخبرة السابقة...", style=discord.TextStyle.paragraph, required=True)
-
-        self.deadline = TextInput(label="آخر موعد للتقديم", placeholder="مثلاً: يوم الجمعة القادم الساعة 12 منتصف الليل", max_length=100, required=True)
-
-
+        self.roles = TextInput(label="الرتب المتاحة للتقديم", placeholder="مثلاً: مشرف شات / منظم فعاليات", max_length=100, required=True)
+        self.reqs = TextInput(label="الشروط والمتطلبات", placeholder="اكتب الشروط الأساسية للتقديم...", style=discord.TextStyle.paragraph, required=True)
+        self.deadline = TextInput(label="آخر موعد للتقديم", placeholder="مثلاً: يوم الجمعة القادم الساعة 12:00 منتصف الليل", max_length=100, required=True)
 
         self.add_item(self.roles)
-
         self.add_item(self.reqs)
-
         self.add_item(self.deadline)
 
-
-
     def format_msg(self, roles, reqs, deadline):
-
-        return (
-
-            f"** ``` 🌟 فتح باب التقديم لطاقم الإدارة 🌟 ``` \n\n"
-
-            f"💼 الرتب المتاحة : {roles}\n\n"
-
-            f"📜 أهم الشروط :\n{reqs}\n\n"
-
-            f"🎫 طريقة التقديم : توجه إلى روم التكت <#{TICKET_CHANNEL_ID}> لتقديم طلبك.\n\n"
-
-            f"⏳ آخر موعد للتقديم : {deadline}\n\n"
-
-            f"نتمنى التوفيق للجميع ومن يرى في نفسه الكفاءة أهلاً به في طاقمنا! 🚀\n\n"
-
-            f"**\n"
-
-            f"@everyone"
-
+        embed = discord.Embed(
+            title="🌟 فتح باب التقديم لطاقم الإدارة",
+            description="يسرنا فتح باب الانضمام لطاقم العمل لكل من يمتلك الشغف والرغبة في التطوير! 💼",
+            color=discord.Color.from_rgb(40, 167, 69)
         )
-
+        embed.add_field(name="💼 الرتب المتاحة", value=f"`{roles}`", inline=False)
+        embed.add_field(name="📜 أهم الشروط والمتطلبات", value=reqs, inline=False)
+        embed.add_field(name="🎫 طريقة التقديم", value=f"توجه إلى روم التكت <#{TICKET_CHANNEL_ID}> لتقديم طلبك.", inline=False)
+        embed.add_field(name="⏳ آخر موعد للتقديم", value=f"`{deadline}`", inline=False)
+        return embed
 
 
 # 11. إغلاق التقديم للإدارة
-
 class ApplyCloseModal(BaseAdminModal):
-
     def __init__(self, panel_message=None, image_bytes: bytes = None, filename: str = None):
-
         super().__init__(image_bytes=image_bytes, filename=filename, title="🔒 إغلاق باب التقديم للإدارة", formatter=self.format_msg, panel_message=panel_message)
-
         self.notes = TextInput(label="ملاحظات الإدارة", placeholder="نشكر كل من تقدم وسنراجع جميع الطلبات...", style=discord.TextStyle.paragraph, required=True)
-
         self.date = TextInput(label="موعد إعلان المقبولين", placeholder="مثلاً: بعد غدٍ بإذن الله", max_length=100, required=True)
 
-
-
         self.add_item(self.notes)
-
         self.add_item(self.date)
 
-
-
     def format_msg(self, notes, date):
-
-        return (
-
-            f"** ``` 🔒 إغلاق باب التقديم للإدارة 🔒 ``` \n\n"
-
-            f"تم إغلاق باب التقديم رسمياً لطاقم الإدارة.\n\n"
-
-            f"📝 ملاحظات : {notes}\n\n"
-
-            f"📅 موعد إعلان النتائج : {date}\n\n"
-
-            f"شاكرين لكم جميعاً ونتمنى التوفيق لكل من تقدم! 🌟\n\n"
-
-            f"**\n"
-
-            f"@everyone"
-
+        embed = discord.Embed(
+            title="🔒 إغلاق باب التقديم للإدارة",
+            description="شاكرين لكم جميعاً مشاركتكم ونتمنى التوفيق لكل من تقدم! 🌟",
+            color=discord.Color.from_rgb(108, 117, 125)
         )
-
+        embed.add_field(name="📝 ملاحظات الإدارة", value=notes, inline=False)
+        embed.add_field(name="📅 موعد إعلان النتائج", value=f"`{date}`", inline=False)
+        return embed
 
 
 # 12. تكريم عضو متميز
-
 class HonorModal(BaseAdminModal):
-
     def __init__(self, user: discord.Member, panel_message=None, image_bytes: bytes = None, filename: str = None):
-
         self.user = user
-
         super().__init__(image_bytes=image_bytes, filename=filename, title="👑 تكريم عضو متميز", formatter=self.format_msg, panel_message=panel_message)
-
         self.reason = TextInput(label="سبب التكريم والتميز", placeholder="تفاعله المميز وأخلاقه العالية...", style=discord.TextStyle.paragraph, required=True)
-
         self.reward = TextInput(label="المكافأة المقدمة", placeholder="مثلاً: رتبة خاصة + نقاط في الروليت", max_length=100, required=True)
 
-
-
         self.add_item(self.reason)
-
         self.add_item(self.reward)
 
-
-
     def format_msg(self, reason, reward):
-
-        return (
-
-            f"** ``` 👑 تكريم العضو المتميز 👑 ``` \n\n"
-
-            f"👤 الاسم : {self.user.mention}\n\n"
-
-            f"✨ سبب التميز : {reason}\n\n"
-
-            f"🎁 المكافأة : {reward}\n\n"
-
-            f"نشكرك على تفاعلك وأخلاقك العالية ونتمنى لك دوام التألق في مجتمعنا! 💐\n\n"
-
-            f"**\n"
-
-            f"@everyone"
-
+        embed = discord.Embed(
+            title="👑 تكريم العضو المتميز",
+            description="نشكرك على تفاعلك وأخلاقك العالية ونتمنى لك دوام التألق في مجتمعنا! 💐",
+            color=discord.Color.from_rgb(255, 193, 7)
         )
-
+        embed.add_field(name="👤 العضو المكرم", value=self.user.mention, inline=False)
+        embed.add_field(name="✨ سبب التميز", value=reason, inline=False)
+        embed.add_field(name="🎁 المكافأة والتقدير", value=f"`{reward}`", inline=False)
+        if self.user.display_avatar:
+            embed.set_thumbnail(url=self.user.display_avatar.url)
+        return embed
 
 
 # 13. إعلان صيانة وتحديث
-
 class MaintenanceModal(BaseAdminModal):
-
     def __init__(self, panel_message=None, image_bytes: bytes = None, filename: str = None):
-
         super().__init__(image_bytes=image_bytes, filename=filename, title="🛠️ إعلان صيانة وتحديث", formatter=self.format_msg, panel_message=panel_message)
-
         self.details = TextInput(label="تفاصيل الصيانة والتطوير", placeholder="تحديث البوتات وإعادة تنظيم الرومات...", style=discord.TextStyle.paragraph, required=True)
-
         self.time = TextInput(label="الموعد والمدة المتوقعة", placeholder="مثلاً: الليلة من 2:00 إلى 4:00 فجراً", max_length=100, required=True)
-
         self.affected = TextInput(label="الخدمات أو الرومات المتأثرة", placeholder="مثلاً: روم الألعاب وبوت الروليت", max_length=100, required=True)
 
-
-
         self.add_item(self.details)
-
         self.add_item(self.time)
-
         self.add_item(self.affected)
 
-
-
     def format_msg(self, details, time_val, affected):
-
-        return (
-
-            f"** ``` 🛠️ إعلان صيانة وتحديث في السيرفر 🛠️ ``` \n\n"
-
-            f"🔧 تفاصيل الصيانة : {details}\n\n"
-
-            f"⏰ الموعد والمدة : {time_val}\n\n"
-
-            f"⚠️ الخدمات المتأثرة : {affected}\n\n"
-
-            f"نعتذر عن أي إزعاج مؤقت، ونعمل دائماً لتوفير أفضل تجربة لكم! ⚙️\n\n"
-
-            f"**\n"
-
-            f"@everyone"
-
+        embed = discord.Embed(
+            title="🛠️ إعلان صيانة وتحديث في السيرفر",
+            description="نعتذر عن أي إزعاج مؤقت، ونعمل دائماً لتوفير أفضل تجربة لكم! ⚙️",
+            color=discord.Color.from_rgb(23, 162, 184)
         )
+        embed.add_field(name="🔧 تفاصيل الصيانة", value=details, inline=False)
+        embed.add_field(name="⏰ الموعد والمدة المتوقعة", value=f"`{time_val}`", inline=False)
+        embed.add_field(name="⚠️ الرومات / الخدمات المتأثرة", value=f"`{affected}`", inline=False)
+        return embed
 
 
-
-# 14. تحديث القوانين
-
+# 14. تحديث القوانين والأنظمة
 class RulesModal(BaseAdminModal):
-
     def __init__(self, panel_message=None, image_bytes: bytes = None, filename: str = None):
-
         super().__init__(image_bytes=image_bytes, filename=filename, title="📜 تحديث قوانين السيرفر", formatter=self.format_msg, panel_message=panel_message)
-
         self.rule = TextInput(label="البند أو القانون المعدل", placeholder="مثلاً: البند رقم 4 (قوانين الإعلانات)", max_length=100, required=True)
-
         self.content = TextInput(label="نص التعديل الجديد", placeholder="اكتب التعديل الجديد بوضوح...", style=discord.TextStyle.paragraph, required=True)
-
         self.notes = TextInput(label="ملاحظات وتنبيهات", placeholder="يرجى الالتزام لتجنب العقوبات...", style=discord.TextStyle.paragraph, required=True)
 
-
-
         self.add_item(self.rule)
-
         self.add_item(self.content)
-
         self.add_item(self.notes)
 
-
-
     def format_msg(self, rule, content, notes):
-
-        return (
-
-            f"** ``` 📜 تنويه هام: تحديث في قوانين السيرفر 📜 ``` \n\n"
-
-            f"📌 البند : {rule}\n\n"
-
-            f"⚖️ نص التعديل الجديد :\n{content}\n\n"
-
-            f"💡 ملاحظات الإدارة : {notes}\n\n"
-
-            f"⚠️ نرجو من الجميع الاطلاع والالتزام التام بالقوانين تجنباً لأي مخالفة.\n\n"
-
-            f"**\n"
-
-            f"@everyone"
-
+        embed = discord.Embed(
+            title="📜 تنويه هام: تحديث في قوانين السيرفر",
+            description="⚠️ نرجو من الجميع الاطلاع والالتزام التام بالقوانين تجنباً لأي مخالفات.",
+            color=discord.Color.from_rgb(111, 66, 193)
         )
-
+        embed.add_field(name="📌 البند المعدل", value=f"`{rule}`", inline=False)
+        embed.add_field(name="⚖️ نص التعديل الجديد", value=content, inline=False)
+        embed.add_field(name="💡 ملاحظات الإدارة", value=notes, inline=False)
+        return embed
 
 
 # 15. تعميم إداري عام
-
 class AnnouncementModal(BaseAdminModal):
-
     def __init__(self, panel_message=None, image_bytes: bytes = None, filename: str = None):
-
         super().__init__(image_bytes=image_bytes, filename=filename, title="📢 تعميم إداري عام", formatter=self.format_msg, panel_message=panel_message)
-
         self.title_input = TextInput(label="عنوان البيان / التعميم", placeholder="مثلاً: تنبيه بخصوص الفعاليات القادمة", max_length=100, required=True)
-
         self.text = TextInput(label="نص البيان والتوجيهات", placeholder="اكتب نص التعميم بالتفصيل...", style=discord.TextStyle.paragraph, required=True)
-
         self.note = TextInput(label="تنبيه أو توجيه خاص", placeholder="مثلاً: يرجى التفاعل والالتزام", max_length=150, required=False)
 
-
-
         self.add_item(self.title_input)
-
         self.add_item(self.text)
-
         self.add_item(self.note)
 
-
-
     def format_msg(self, title, text, note):
-
-        note_line = f"\n\n⚠️ توجيه خاص : {note}" if note else ""
-
-        return (
-
-            f"** ``` 📢 تعميم إداري عام 📢 ``` \n\n"
-
-            f"📌 العنوان : {title}\n\n"
-
-            f"📝 البيان :\n{text}"
-
-            f"{note_line}\n\n"
-
-            f"شاكرين للجميع حسن التعاون والالتزام الدائم.\n\n"
-
-            f"**\n"
-
-            f"@everyone"
-
+        embed = discord.Embed(
+            title=f"📢 {title}",
+            description=f"{text}\n\nشاكرين للجميع حسن التعاون والالتزام الدائم.",
+            color=discord.Color.from_rgb(0, 123, 255)
         )
+        if note:
+            embed.add_field(name="💡 تنبيه خاص", value=note, inline=False)
+        return embed
 
 
-
-# 16. فاتورة جديدة
-
+# 16. إنشاء فاتورة جديدة
 class InvoiceModal(BaseAdminModal):
-
     def __init__(self, user: discord.Member, panel_message=None, image_bytes: bytes = None, filename: str = None):
-
         self.user = user
-
         super().__init__(image_bytes=image_bytes, filename=filename, title="🔔 إنشاء فاتورة جديدة", formatter=self.format_msg, panel_message=panel_message)
-
         self.invoice_num = TextInput(
-
             label="رقم العملية", 
-
             placeholder="مثال: #293 أو 293", 
-
             max_length=50, 
-
             required=True
-
         )
-
         today_str = datetime.date.today().strftime("%Y-%m-%d")
-
         self.invoice_date = TextInput(
-
             label="التاريخ", 
-
             default=today_str, 
-
             max_length=50, 
-
             required=True
-
         )
-
         self.product_type = TextInput(
-
             label="نوع المنتج", 
-
             placeholder="مثال: يوزر رباعي / حساب ديسكورد / نيترو...", 
-
             max_length=150, 
-
             required=True
-
         )
-
         self.notes = TextInput(
-
             label="ملاحظات أو السعر (اختياري)", 
-
             placeholder="أي تفاصيل إضافية أو اتركها فارغة...", 
-
             max_length=150, 
-
             required=False
-
         )
-
-
 
         self.add_item(self.invoice_num)
-
         self.add_item(self.invoice_date)
-
         self.add_item(self.product_type)
-
         self.add_item(self.notes)
 
-
-
     def format_msg(self, invoice_num, invoice_date, product_type, notes=""):
-
         num_str = invoice_num if invoice_num.startswith("#") else f"#{invoice_num}"
 
         # تصميم الإمبد المطابق تماماً للصورة المعروضة
@@ -969,9 +621,8 @@ class InvoiceModal(BaseAdminModal):
         elif self.user.guild and self.user.guild.icon:
             embed.set_thumbnail(url=self.user.guild.icon.url)
 
-        # منشن العميل فوق الإمبد لإشعاره
-        return (self.user.mention, embed)
-
+        # بدون أي منشن خارج الإمبد
+        return embed
 
 
 # ==============================================================================
