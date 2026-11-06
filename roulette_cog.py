@@ -134,6 +134,60 @@ class RouletteJoinView(View):
         await interaction.response.send_message(embed=view.build_embed(), view=view, ephemeral=True)
 
 
+
+class ContestJoinView(View):
+    def __init__(self, game):
+        super().__init__(timeout=None)
+        self.game = game
+
+    @discord.ui.button(label="دخول سريع", emoji="🎲", style=discord.ButtonStyle.success, row=0)
+    async def join_quick(self, interaction: discord.Interaction, button: Button):
+        async with self.game.lock:
+            if self.game.state != "WAITING" or self.game.cancelled:
+                return await interaction.response.send_message("❌ انتهى وقت التسجيل.", ephemeral=True)
+            if any(p["id"] == interaction.user.id for p in self.game.players):
+                return await interaction.response.send_message("❌ أنت مسجل بالفعل!", ephemeral=True)
+            if len(self.game.players) >= MAX_SEATS:
+                return await interaction.response.send_message("❌ المقاعد مكتملة!", ephemeral=True)
+
+            taken = {p["number"] for p in self.game.players}
+            available = [n for n in range(1, MAX_SEATS + 1) if n not in taken]
+            number = random.choice(available)
+            self.game.players.append({
+                "number": number,
+                "id": interaction.user.id,
+                "username": interaction.user.display_name,
+                "avatar_url": interaction.user.display_avatar.url,
+                "avimg": None
+            })
+
+        await interaction.response.send_message(f"✅ انضممت في المقعد `[{number:02d}]`.", ephemeral=True)
+        await self.game.request_refresh()
+
+    @discord.ui.button(label="اختر مقعداً", emoji="🔢", style=discord.ButtonStyle.primary, row=0)
+    async def choose_seat(self, interaction: discord.Interaction, button: Button):
+        if self.game.state != "WAITING" or self.game.cancelled:
+            return await interaction.response.send_message("❌ انتهى وقت التسجيل.", ephemeral=True)
+        if any(p["id"] == interaction.user.id for p in self.game.players):
+            return await interaction.response.send_message("❌ أنت مسجل بالفعل!", ephemeral=True)
+        if len(self.game.players) >= MAX_SEATS:
+            return await interaction.response.send_message("❌ المقاعد مكتملة!", ephemeral=True)
+        await interaction.response.send_modal(ChooseSeatModal(self.game))
+
+    @discord.ui.button(label="خروج", emoji="🚪", style=discord.ButtonStyle.danger, row=0)
+    async def leave_btn(self, interaction: discord.Interaction, button: Button):
+        async with self.game.lock:
+            if self.game.state != "WAITING" or self.game.cancelled:
+                return await interaction.response.send_message("❌ لا يمكن الخروج الآن.", ephemeral=True)
+            player = next((p for p in self.game.players if p["id"] == interaction.user.id), None)
+            if not player:
+                return await interaction.response.send_message("❌ لست مسجلاً في اللعبة.", ephemeral=True)
+            self.game.players = [p for p in self.game.players if p["id"] != interaction.user.id]
+
+        await interaction.response.send_message("✅ خرجت من اللعبة.", ephemeral=True)
+        await self.game.request_refresh()
+
+
 class DoubleKickSelect(Select):
     def __init__(self, subset_players, parent_view, row=0, placeholder="🎯 اختر لاعبين لطردهم..."):
         self.parent_view = parent_view
@@ -171,6 +225,60 @@ class DoubleKickSelect(Select):
                 f"✅ تم تحديد `[{self.parent_view.selected_targets[0]:02d}]`، اختر الهدف الثاني أو اضغط تأكيد.",
                 ephemeral=True
             )
+
+
+
+class ContestJoinView(View):
+    def __init__(self, game):
+        super().__init__(timeout=None)
+        self.game = game
+
+    @discord.ui.button(label="دخول سريع", emoji="🎲", style=discord.ButtonStyle.success, row=0)
+    async def join_quick(self, interaction: discord.Interaction, button: Button):
+        async with self.game.lock:
+            if self.game.state != "WAITING" or self.game.cancelled:
+                return await interaction.response.send_message("❌ انتهى وقت التسجيل.", ephemeral=True)
+            if any(p["id"] == interaction.user.id for p in self.game.players):
+                return await interaction.response.send_message("❌ أنت مسجل بالفعل!", ephemeral=True)
+            if len(self.game.players) >= MAX_SEATS:
+                return await interaction.response.send_message("❌ المقاعد مكتملة!", ephemeral=True)
+
+            taken = {p["number"] for p in self.game.players}
+            available = [n for n in range(1, MAX_SEATS + 1) if n not in taken]
+            number = random.choice(available)
+            self.game.players.append({
+                "number": number,
+                "id": interaction.user.id,
+                "username": interaction.user.display_name,
+                "avatar_url": interaction.user.display_avatar.url,
+                "avimg": None
+            })
+
+        await interaction.response.send_message(f"✅ انضممت في المقعد `[{number:02d}]`.", ephemeral=True)
+        await self.game.request_refresh()
+
+    @discord.ui.button(label="اختر مقعداً", emoji="🔢", style=discord.ButtonStyle.primary, row=0)
+    async def choose_seat(self, interaction: discord.Interaction, button: Button):
+        if self.game.state != "WAITING" or self.game.cancelled:
+            return await interaction.response.send_message("❌ انتهى وقت التسجيل.", ephemeral=True)
+        if any(p["id"] == interaction.user.id for p in self.game.players):
+            return await interaction.response.send_message("❌ أنت مسجل بالفعل!", ephemeral=True)
+        if len(self.game.players) >= MAX_SEATS:
+            return await interaction.response.send_message("❌ المقاعد مكتملة!", ephemeral=True)
+        await interaction.response.send_modal(ChooseSeatModal(self.game))
+
+    @discord.ui.button(label="خروج", emoji="🚪", style=discord.ButtonStyle.danger, row=0)
+    async def leave_btn(self, interaction: discord.Interaction, button: Button):
+        async with self.game.lock:
+            if self.game.state != "WAITING" or self.game.cancelled:
+                return await interaction.response.send_message("❌ لا يمكن الخروج الآن.", ephemeral=True)
+            player = next((p for p in self.game.players if p["id"] == interaction.user.id), None)
+            if not player:
+                return await interaction.response.send_message("❌ لست مسجلاً في اللعبة.", ephemeral=True)
+            self.game.players = [p for p in self.game.players if p["id"] != interaction.user.id]
+
+        await interaction.response.send_message("✅ خرجت من اللعبة.", ephemeral=True)
+        await self.game.request_refresh()
 
 
 class DoubleKickSelectView(View):
@@ -304,12 +412,45 @@ class KickView(View):
         await interaction.response.send_message(msg, ephemeral=True)
 
 
+
+class ContestKickView(View):
+    """واجهة طرد مخصصة لطور المسابقة: طرد عشوائي فقط وبدون خواص أو حقيبة أو استهداف محدد"""
+    def __init__(self, game, winner, players):
+        super().__init__(timeout=30)
+        self.game = game
+        self.winner = winner
+        self.choice = None
+
+        rand_btn = Button(label="طرد عشوائي", emoji="🎲", style=discord.ButtonStyle.primary, row=0)
+        rand_btn.callback = self._random_kick_callback
+        self.add_item(rand_btn)
+
+        with_btn = Button(label="انسحاب", emoji="🏳️", style=discord.ButtonStyle.danger, row=0)
+        with_btn.callback = self._withdraw_callback
+        self.add_item(with_btn)
+
+    async def _random_kick_callback(self, interaction: discord.Interaction):
+        if interaction.user.id != self.winner["id"]:
+            return await interaction.response.send_message("❌ ليس دورك!", ephemeral=True)
+        self.choice = ("random_kick", None, interaction)
+        self.stop()
+        await interaction.response.defer()
+
+    async def _withdraw_callback(self, interaction: discord.Interaction):
+        if interaction.user.id != self.winner["id"]:
+            return await interaction.response.send_message("❌ ليس دورك!", ephemeral=True)
+        self.choice = ("withdraw", None, interaction)
+        self.stop()
+        await interaction.response.defer()
+
+
 class RouletteGame:
-    def __init__(self, cog, channel, starter):
+    def __init__(self, cog, channel, starter, game_mode="roulette"):
         self.cog = cog
         self.channel = channel
         self.guild = channel.guild
         self.starter = starter
+        self.game_mode = game_mode  # "roulette" أو "contest"
         self.channel_id = channel.id
         self.created_at = time.time()
         self.start_timestamp = int(self.created_at + WAITING_TIME)
@@ -325,10 +466,23 @@ class RouletteGame:
         self._refresh_scheduled = False
 
     def build_join_embed(self):
+        if self.game_mode == "contest":
+            title = f"🏆 مسابقة الروليت ({len(self.players)}/{MAX_SEATS})"
+            desc_note = "📌 **نظام المسابقة:** طرد عشوائي فقط وبدون خواص أو حقيبة."
+            color = 0x3498DB
+        else:
+            title = f"🎡 روليت الحظ ({len(self.players)}/{MAX_SEATS})"
+            desc_note = ""
+            color = 0xF1C40F
+
+        desc = f"{format_players_text(self.players)}\n\n⏳ يبدأ اللعب: **<t:{self.start_timestamp}:R>**"
+        if desc_note:
+            desc = f"{desc}\n\n{desc_note}"
+
         embed = discord.Embed(
-            title=f"🎡 روليت الحظ ({len(self.players)}/{MAX_SEATS})",
-            description=f"{format_players_text(self.players)}\n\n⏳ يبدأ اللعب: **<t:{self.start_timestamp}:R>**",
-            color=0xF1C40F
+            title=title,
+            description=desc,
+            color=color
         )
         return embed
 
@@ -400,6 +554,37 @@ class RouletteCog(commands.Cog):
 
         game.task = asyncio.create_task(self._run_game_lifecycle(ctx, game))
 
+    @commands.command(name="مسابقة", aliases=["مسابقه", "contest", "_مسابقة", "_مسابقه", "_contest"])
+    async def contest_cmd(self, ctx):
+        """بدء روليت المسابقة (بدون خواص حقيبة، طرد عشوائي فقط)"""
+        if not self._can_manage_events(ctx):
+            return await ctx.send("❌ للمشرفين فقط.", delete_after=5)
+
+        cid = ctx.channel.id
+        if self.is_game_active(cid):
+            old = self.active_games.get(cid)
+            if old and (time.time() - old.created_at) > 600:
+                await self.stop_game(cid)
+            else:
+                return await ctx.send("❌ توجد لعبة نشطة بالفعل!", delete_after=5)
+
+        try:
+            from bot import has_active_game, get_active_game
+            if has_active_game(cid):
+                return await ctx.send(f"❌ توجد لعبة **{get_active_game(cid)}** نشطة في الروم!", delete_after=5)
+        except Exception:
+            pass
+
+        game = RouletteGame(self, ctx.channel, ctx.author, game_mode="contest")
+        self.active_games[cid] = game
+        try:
+            from bot import register_game
+            register_game(cid, "contest")
+        except Exception:
+            pass
+
+        game.task = asyncio.create_task(self._run_game_lifecycle(ctx, game))
+
     @commands.command(name="متجر", aliases=["shop", "المتجر", "نقاطي", "points", "رصيدي"])
     async def shop_cmd(self, ctx):
         """فتح زر المتجر والنقاط بشكل خاص لكل لاعب دون إزعاج الشات"""
@@ -431,7 +616,10 @@ class RouletteCog(commands.Cog):
     async def _run_game_lifecycle(self, ctx, game):
         cid = ctx.channel.id
         try:
-            game.join_view = RouletteJoinView(game)
+            if game.game_mode == "contest":
+                game.join_view = ContestJoinView(game)
+            else:
+                game.join_view = RouletteJoinView(game)
             game.current_view = game.join_view
             game.main_message = await ctx.send(embed=game.build_join_embed(), view=game.join_view)
 
@@ -485,11 +673,17 @@ class RouletteCog(commands.Cog):
             highlight=highlight_idx
         )
 
-        kick_view = KickView(game, winner, players)
+        if game.game_mode == "contest":
+            kick_view = ContestKickView(game, winner, players)
+            mode_prefix = "🏆 **المسابقة**"
+        else:
+            kick_view = KickView(game, winner, players)
+            mode_prefix = "🎡"
+
         game.current_view = kick_view
 
         # رسالة واحدة مدمجة فيها الصورة والأزرار معاً لتقليل الرسائل في الشات
-        content = f"🎡 **الجولة {round_number}** (`{len(players)}` متبقي) — الدور على **[{winner['number']:02d}]** <@{winner['id']}>"
+        content = f"{mode_prefix} **الجولة {round_number}** (`{len(players)}` متبقي) — الدور على **[{winner['number']:02d}]** <@{winner['id']}>"
         turn_msg = await ctx.send(
             content=content,
             file=discord.File(img_buf, filename="roulette.png"),
@@ -530,6 +724,12 @@ class RouletteCog(commands.Cog):
             victim = random.choice(others) if is_random else next((p for p in players if p["number"] == c_val), None)
 
             if not victim:
+                return
+
+            # في طور المسابقة: طرد عشوائي مباشر بدون أي خواص حقيبة وبدون نقاط
+            if game.game_mode == "contest":
+                game.players = [p for p in game.players if p["id"] != victim["id"]]
+                await ctx.send(f"🎲 طرد <@{winner['id']}> اللاعب <@{victim['id']}> عشوائياً!")
                 return
 
             icon = "🎲" if is_random else "💣"
