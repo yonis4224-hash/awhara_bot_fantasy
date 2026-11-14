@@ -511,6 +511,7 @@ from profile_cog import ProfileCog
 from admin_cog import AdminCog
 
 from mafia_cog import MafiaCog
+from box_cog import BoxCog
 
 
 
@@ -532,7 +533,9 @@ GAME_NAMES_AR = {
 
     "scopa": "البصرة / الشكوبا 🃏",
 
-    "mafia": "المافيا 🎭"
+    "mafia": "المافيا 🎭",
+
+    "box": "صندوق الحظ 🎁"
 
 }
 
@@ -624,6 +627,18 @@ def find_active_game(channel_id):
 
         pass
 
+    try:
+
+        from box_cog import active_box_games
+
+        if channel_id in active_box_games:
+
+            return "box"
+
+    except Exception:
+
+        pass
+
     return None
 
 
@@ -687,6 +702,10 @@ async def setup_hook():
     await bot.add_cog(MafiaCog(bot))
 
     log.info("✅ تم تحميل إضافة لعبة المافيا (MafiaCog) بنجاح!")
+
+    await bot.add_cog(BoxCog(bot))
+
+    log.info("✅ تم تحميل إضافة لعبة صندوق الحظ (BoxCog) بنجاح!")
 
     try:
 
@@ -1154,6 +1173,22 @@ async def end_any_game(ctx):
 
         pass
 
+    try:
+
+        from box_cog import active_box_games
+
+        if cid in active_box_games:
+
+            b_game = active_box_games.pop(cid, None)
+
+            if b_game:
+
+                await b_game.finish(None, "🛑 تم إنهاء اللعبة بواسطة الإدارة.")
+
+    except Exception:
+
+        pass
+
 
 
     gname = GAME_NAMES_AR.get(game_type, game_type)
@@ -1232,7 +1267,17 @@ async def games_cmd(ctx):
 
     embed.add_field(
 
-        name="💳 6. البطاقات التعريفية والتفاعل (Profile & Rank Cards)",
+        name="🎁 6. لعبة صندوق الحظ (Lucky Box)",
+
+        value="• أمر البدء: `_صندوق` أو `_box`\n• 9 صناديق حظ، نقاط، ألماس، وقنابل! مدة اللعبة 30 ثانية\n• إيقاف الأدمن: `.انهاء` أو `_انهاء`",
+
+        inline=False
+
+    )
+
+    embed.add_field(
+
+        name="💳 7. البطاقات التعريفية والتفاعل (Profile & Rank Cards)",
 
         value="• عرض بطاقتك: `.بروفايل` أو `.id` أو `!profile` أو `.بطاقتي`\n• توب المتفاعلين: `.توب` أو `!top`\n• متصدري الأسبوع: `.توب_الاسبوع` أو `!weekly`",
 
