@@ -109,6 +109,91 @@ class MafiaGame:
     def alive(self):
         return [p for p in self.players.values() if p.alive]
 
+    async def notify_player(self, player: Player, dm_text: str):
+        """إرسال تنبيه خاص بالتاغ للاعب في الخاص (لا يراه إلا هو)"""
+        try:
+            await player.member.send(dm_text)
+        except Exception:
+            pass
+
+    async def ghost_ping_players(self, players: list[Player]):
+        """تاغ خفي فوري في الروم يُحذف بنفس اللحظة لتنبيه اللاعبين في السيرفر دون تشويه الشات"""
+        try:
+            if not players:
+                return
+            mentions = " ".join(p.member.mention for p in players)
+            msg = await self.channel.send(mentions)
+            await msg.delete()
+        except Exception:
+            pass
+
+    async def notify_night_phase(self):
+        """إرسال تاغ وتنبيه خاص لكل لاعب عند بداية كل ليلة"""
+        alive = self.alive()
+        # 1. تاغ خفي في الروم لتنبيه اللاعبين وإشعال إشعار الروم لديهم
+        asyncio.create_task(self.ghost_ping_players(alive))
+
+        # 2. تاغ في قناة المافيا السرية لأعضاء المافيا
+        if self.mafia_channel:
+            maf_alive = [p for p in alive if p.team == "mafia"]
+            if maf_alive:
+                maf_mentions = " ".join(p.member.mention for p in maf_alive)
+                await safe(self.mafia_channel.send(
+                    f"🌙 {maf_mentions}\n**حلّت الليلة {self.round}!** تناقشوا هنا حول الهدف ثم صوّتوا في القناة الرئيسية."
+                ))
+
+        # 3. إرسال تاغ خاص في الـ DM لكل لاعب حي (لا يراه أحد غيره)
+        for p in alive:
+            opt = self.night_options(p)
+            if opt and opt[1]:
+                dm_msg = (
+                    f"🌙 {p.member.mention} **حلّت الليلة {self.round} في لعبة المافيا!**\n"
+                    f"🎭 دورك: **{p.label}**\n"
+                    f"✨ لديك قدرة ليلية بانتظارك! توجه إلى الروم {self.channel.mention} واضغط زر **«🌙 قدرة الليل»** (لديك {NIGHT_TIME} ثانية)."
+                )
+            else:
+                dm_msg = (
+                    f"🌙 {p.member.mention} **حلّت الليلة {self.round} في لعبة المافيا!**\n"
+                    f"😴 المدينة نائمة في هدوء... انتظر حتى بزوغ الفجر.\n"
+                    f"روم اللعبة: {self.channel.mention}"
+                )
+            asyncio.create_task(self.notify_player(p, dm_msg))
+
+    async def notify_vote_phase(self):
+        """إرسال تاغ وتنبيه خاص لكل لاعب عند بداية كل تصويت اتهام"""
+        alive = self.alive()
+        # 1. تاغ خفي في الروم
+        asyncio.create_task(self.ghost_ping_players(alive))
+
+        # 2. تاغ خاص في الـ DM لكل لاعب حي
+        for p in alive:
+            dm_msg = (
+                f"🗳️ {p.member.mention} **بدأ وقت التصويت في اليوم {self.round}!**\n"
+                f"⚖️ حان وقت اختيار المتهم للتحقيق معه! توجه إلى {self.channel.mention} وصوّت من القائمة (لديك {VOTE_TIME} ثانية)."
+            )
+            asyncio.create_task(self.notify_player(p, dm_msg))
+
+    async def notify_verdict_phase(self, accused: Player):
+        """إرسال تاغ وتنبيه خاص عند جلسة الحكم (إعدام / تبرئة)"""
+        alive = self.alive()
+        # 1. تاغ خفي في الروم
+        asyncio.create_task(self.ghost_ping_players(alive))
+
+        # 2. تاغ خاص في الـ DM للمصوتين وللمتهم
+        for p in alive:
+            if p.id == accused.id:
+                dm_msg = (
+                    f"⚖️ {accused.member.mention} **أنت الآن في قفص الاتهام!**\n"
+                    f"دافع عن نفسك في {self.channel.mention}، واللاعبون يصوتون الآن على إعدامك أو تبرئتك!"
+                )
+            else:
+                dm_msg = (
+                    f"🔨 {p.member.mention} **جلسة النطق بالحكم!**\n"
+                    f"هل المتهم **{accused.name}** مذنب أم بريء؟ توجه إلى {self.channel.mention} وصوّت الآن (لديك {VERDICT_TIME} ثانية)."
+                )
+            asyncio.create_task(self.notify_player(p, dm_msg))
+
+
     def lobby_embed(self):
         names = "\n".join(f"• {p.member.mention}" for p in self.players.values())
         e = discord.Embed(
@@ -221,6 +306,7 @@ class MafiaGame:
                           description=f"حلّ الظلام... القناة مغلقة.\nأصحاب القدرات: اضغطوا **«🌙 قدرة الليل»** (لديكم {NIGHT_TIME} ثانية).\nالمافيا: تناقشوا في قناتكم السرية ثم صوّتوا.",
                           color=0x0B1D51)
         await self.channel.send(embed=e, view=GamePanel(self))
+        await self.notify_night_phase()
         self.check_night_done()
 
         loop = asyncio.get_running_loop()
@@ -321,6 +407,7 @@ class MafiaGame:
         self.vote_event = asyncio.Event()
         view = VoteView(self)
         msg = await self.channel.send(embed=self.vote_embed(), view=view)
+        await self.notify_vote_phase()
         try:
             await asyncio.wait_for(self.vote_event.wait(), VOTE_TIME)
         except asyncio.TimeoutError:
@@ -372,6 +459,7 @@ class MafiaGame:
             title="🔨 الحكم",
             description=f"هل **{accused.name}** مذنب؟ صوّتوا خلال {VERDICT_TIME} ثانية.",
             color=0xB5179E), view=VerdictView(self, accused))
+        await self.notify_verdict_phase(accused)
         try:
             await asyncio.wait_for(self.verdict_event.wait(), VERDICT_TIME)
         except asyncio.TimeoutError:
