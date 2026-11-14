@@ -651,31 +651,15 @@ class RoleDMModal(Modal):
         self.image_bytes = image_bytes
         self.filename = filename or "image.png"
 
-        self.msg_title = TextInput(
-            label="عنوان الرسالة (موضوع الإشعار)",
-            placeholder="مثال: تنبيه هام / دعوة للاجتماع / إشعار رسمي...",
-            default="إشعار إداري رسمي",
-            max_length=100,
-            required=True
-        )
         self.msg_content = TextInput(
-            label="نص الرسالة المرسلة في الخاص",
-            placeholder="اكتب هنا محتوى الرسالة التي ستصل لكل أعضاء هذه الرتبة في الخاص...",
+            label="نص الرسالة (تصل كما هي بدون أي زيادات)",
+            placeholder="الصق هنا الرسالة تماماً كما تريد أن تصل إلى الخاص...",
             style=discord.TextStyle.paragraph,
             max_length=2000,
             required=True
         )
-        self.sender_sign = TextInput(
-            label="التوقيع أو المرسل (اختياري)",
-            placeholder="مثال: إدارة السيرفر / الإدارة العليا...",
-            default="إدارة السيرفر",
-            max_length=100,
-            required=False
-        )
 
-        self.add_item(self.msg_title)
         self.add_item(self.msg_content)
-        self.add_item(self.sender_sign)
 
     async def on_submit(self, interaction: discord.Interaction):
         if self.panel_message:
@@ -717,43 +701,23 @@ class RoleDMModal(Modal):
             success = 0
             failed = 0
             
-            title_text = self.msg_title.value.strip() or "إشعار إداري رسمي"
-            body_text = self.msg_content.value.strip()
-            sign_text = self.sender_sign.value.strip()
-
-            embed = discord.Embed(
-                title=f"📩 {title_text}",
-                description=body_text,
-                color=self.role.color if self.role.color.value != 0 else discord.Color.blue(),
-                timestamp=datetime.datetime.now()
-            )
-            embed.add_field(name="🎖️ الرتبة المستهدفة:", value=self.role.name, inline=True)
-            if sign_text:
-                embed.add_field(name="✍️ صادر عن:", value=sign_text, inline=True)
-
-            if guild.icon:
-                embed.set_footer(text=f"سيرفر: {guild.name} • إشعار إداري خاص", icon_url=guild.icon.url)
-            else:
-                embed.set_footer(text=f"سيرفر: {guild.name} • إشعار إداري خاص")
+            # نص الرسالة الصافي تماماً بدون أي كلمات أو إمبد
+            raw_text = self.msg_content.value.strip()
 
             for member in target_members:
                 try:
-                    files = []
                     if self.image_bytes:
                         file = discord.File(io.BytesIO(self.image_bytes), filename=self.filename)
-                        files.append(file)
-                        embed.set_image(url=f"attachment://{self.filename}")
-                    
-                    if files:
-                        await member.send(embed=embed, files=files)
+                        await member.send(content=raw_text, file=file)
                     else:
-                        await member.send(embed=embed)
+                        await member.send(content=raw_text)
                     success += 1
                 except Exception:
                     failed += 1
                 
                 await asyncio.sleep(0.5)
 
+            # تقرير للإداري فقط لتأكيد النتيجة
             report_embed = discord.Embed(
                 title="📊 تقرير إرسال الرسائل الخاصة (DM Role)",
                 description=(
@@ -774,8 +738,6 @@ class RoleDMModal(Modal):
                     pass
 
         asyncio.create_task(send_all())
-
-# تعريف القرارات وتصنيفها
 
 # ==============================================================================
 
