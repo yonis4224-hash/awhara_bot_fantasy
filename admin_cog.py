@@ -1,3 +1,4 @@
+from typing import Optional
 import os
 import discord
 
@@ -53,7 +54,7 @@ def get_main_admin_embed(author: discord.Member) -> discord.Embed:
 
             "إذا كان القرار يتطلب عضواً أو رتبة، **ستظهر لك قائمة فورية برتب وأعضاء السيرفر لاختيارهم بضغطة زر** بدون الحاجة لنسخ أي تاغ! ✨\n\n"
 
-            "**📋 الخيارات المتاحة (16 قرار إداري رسمي وفاتورة مرتبة):**\n"
+            "**📋 الخيارات المتاحة (17 خياراً وقراراً إدارياً مرتباً):**\n"
 
             "• `1` 🎪 إنشاء فعالية • `2` ⭐ ترقية عضو • `3` 🌟 نجم/أدمن الأسبوع\n"
 
@@ -63,7 +64,7 @@ def get_main_admin_embed(author: discord.Member) -> discord.Embed:
 
             "• `10` 📥 فتح التقديم • `11` 🔒 إغلاق التقديم • `12` 👑 تكريم متميز\n"
 
-            "• `13` 🛠️ صيانة وتحديث • `14` 📜 تحديث قوانين • `15` 📢 تعميم عام • `16` 🔔 فاتورة جديدة"
+            "• `13` 🛠️ صيانة وتحديث • `14` 📜 تحديث قوانين • `15` 📢 تعميم عام • `16` 🔔 فاتورة جديدة • `17` ✉️ إرسال خاص لرتبة (DM)\n\n💡 **إرفاق الصور:** يمكنك إرفاق أي صورة (مثل إثبات تحويل الفاتورة) مباشرة مع رسالة أمر `_اداره` أو `_فاتورة` لتظهر مدمجة أسفل البطاقة تلقائياً!"
 
         ),
 
@@ -125,10 +126,13 @@ class BaseAdminModal(Modal):
             files_to_send.extend(self.extra_files)
 
         if self.image_bytes:
-            file = discord.File(io.BytesIO(self.image_bytes), filename=self.filename)
+            fname = self.filename or "receipt.png"
+            if fname.lower() == "store_logo.png":
+                fname = "receipt_" + fname
+            file = discord.File(io.BytesIO(self.image_bytes), filename=fname)
             files_to_send.append(file)
             if embed:
-                embed.set_image(url=f"attachment://{self.filename}")
+                embed.set_image(url=f"attachment://{fname}")
 
         if embed:
             if files_to_send:
@@ -581,41 +585,52 @@ class InvoiceModal(BaseAdminModal):
             color=discord.Color.from_rgb(235, 10, 10)  # خط جانبي أحمر فاقع مثل الصورة
         )
 
-        # إضافة حقول الفاتورة بنفس التنسيق والايموجيات
+        # إضافة حقول الفاتورة بنظام الاقتباس (> Blockquote) المطابق للصورة 100%
         embed.add_field(
             name="🪅 رقم العملية",
-            value=f"`{num_str}`",
+            value=f"> {num_str}",
             inline=False
         )
 
         embed.add_field(
             name="⏱️ التاريخ",
-            value=f"`{invoice_date}`",
+            value=f"> {invoice_date}",
             inline=False
         )
 
         embed.add_field(
-            name="👨🏻‍💼 العميل",
-            value=f"{self.user.mention}",
+            name="👨‍💼 العميل",
+            value=f"> {self.user.mention}",
             inline=False
         )
 
         embed.add_field(
             name="📦 نوع المنتج",
-            value=f"`{product_type}`",
+            value=f"> {product_type}",
             inline=False
         )
 
         if notes:
             embed.add_field(
                 name="📝 ملاحظات",
-                value=notes,
+                value=f"> {notes}",
                 inline=False
             )
 
         # وضع شعار متجر أوهارا في أعلى يمين الفاتورة (Thumbnail)
-        logo_path = os.path.join("assets", "store_logo.png")
-        if os.path.exists(logo_path):
+        logo_path = None
+        possible_paths = [
+            os.path.join(os.path.dirname(os.path.abspath(__file__)), "store_logo.png"),
+            os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "store_logo.png"),
+            "store_logo.png",
+            os.path.join("assets", "store_logo.png")
+        ]
+        for p in possible_paths:
+            if os.path.exists(p):
+                logo_path = p
+                break
+
+        if logo_path:
             self.extra_files = [discord.File(logo_path, filename="store_logo.png")]
             embed.set_thumbnail(url="attachment://store_logo.png")
         elif self.user.guild and self.user.guild.icon:
@@ -624,8 +639,141 @@ class InvoiceModal(BaseAdminModal):
         # بدون أي منشن خارج الإمبد
         return embed
 
-
 # ==============================================================================
+
+
+# 17. إرسال رسالة خاصة في الـ DM لجميع أعضاء رتبة معينة
+class RoleDMModal(Modal):
+    def __init__(self, role: discord.Role, panel_message=None, image_bytes: bytes = None, filename: str = None):
+        super().__init__(title=f"✉️ إرسال خاص لرتبة {role.name}"[:45])
+        self.role = role
+        self.panel_message = panel_message
+        self.image_bytes = image_bytes
+        self.filename = filename or "image.png"
+
+        self.msg_title = TextInput(
+            label="عنوان الرسالة (موضوع الإشعار)",
+            placeholder="مثال: تنبيه هام / دعوة للاجتماع / إشعار رسمي...",
+            default="إشعار إداري رسمي",
+            max_length=100,
+            required=True
+        )
+        self.msg_content = TextInput(
+            label="نص الرسالة المرسلة في الخاص",
+            placeholder="اكتب هنا محتوى الرسالة التي ستصل لكل أعضاء هذه الرتبة في الخاص...",
+            style=discord.TextStyle.paragraph,
+            max_length=2000,
+            required=True
+        )
+        self.sender_sign = TextInput(
+            label="التوقيع أو المرسل (اختياري)",
+            placeholder="مثال: إدارة السيرفر / الإدارة العليا...",
+            default="إدارة السيرفر",
+            max_length=100,
+            required=False
+        )
+
+        self.add_item(self.msg_title)
+        self.add_item(self.msg_content)
+        self.add_item(self.sender_sign)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        if self.panel_message:
+            try:
+                await self.panel_message.delete()
+            except Exception:
+                pass
+
+        guild = self.role.guild
+
+        # جلب أعضاء الرتبة
+        members = self.role.members
+        if not members and not guild.chunked:
+            try:
+                await guild.chunk()
+                members = self.role.members
+            except Exception:
+                pass
+
+        if not members:
+            members = [m for m in guild.members if self.role in m.roles]
+
+        target_members = [m for m in members if not m.bot]
+
+        if not target_members:
+            return await interaction.response.send_message(
+                f"⚠️ لا يوجد أي أعضاء يحملون رتبة {self.role.mention} حالياً في السيرفر!", 
+                ephemeral=True
+            )
+
+        # رد سريع للإداري
+        await interaction.response.send_message(
+            f"⏳ **جاري بدء إرسال الرسالة في الخاص لـ `{len(target_members)}` عضو في رتبة {self.role.mention}...**\n"
+            f"سيصلك تقرير تفصيلي هنا فور اكتمال الإرسال 📊",
+            ephemeral=True
+        )
+
+        async def send_all():
+            success = 0
+            failed = 0
+            
+            title_text = self.msg_title.value.strip() or "إشعار إداري رسمي"
+            body_text = self.msg_content.value.strip()
+            sign_text = self.sender_sign.value.strip()
+
+            embed = discord.Embed(
+                title=f"📩 {title_text}",
+                description=body_text,
+                color=self.role.color if self.role.color.value != 0 else discord.Color.blue(),
+                timestamp=datetime.datetime.now()
+            )
+            embed.add_field(name="🎖️ الرتبة المستهدفة:", value=self.role.name, inline=True)
+            if sign_text:
+                embed.add_field(name="✍️ صادر عن:", value=sign_text, inline=True)
+
+            if guild.icon:
+                embed.set_footer(text=f"سيرفر: {guild.name} • إشعار إداري خاص", icon_url=guild.icon.url)
+            else:
+                embed.set_footer(text=f"سيرفر: {guild.name} • إشعار إداري خاص")
+
+            for member in target_members:
+                try:
+                    files = []
+                    if self.image_bytes:
+                        file = discord.File(io.BytesIO(self.image_bytes), filename=self.filename)
+                        files.append(file)
+                        embed.set_image(url=f"attachment://{self.filename}")
+                    
+                    if files:
+                        await member.send(embed=embed, files=files)
+                    else:
+                        await member.send(embed=embed)
+                    success += 1
+                except Exception:
+                    failed += 1
+                
+                await asyncio.sleep(0.5)
+
+            report_embed = discord.Embed(
+                title="📊 تقرير إرسال الرسائل الخاصة (DM Role)",
+                description=(
+                    f"✅ **اكتملت عملية الإرسال بنجاح!**\n\n"
+                    f"🎖️ **الرتبة المستهدفة:** {self.role.mention}\n"
+                    f"🟢 **تم الإرسال بنجاح:** `{success}` عضو\n"
+                    f"🔴 **تعذر الإرسال (الخاص مغلق):** `{failed}` عضو\n"
+                    f"👥 **إجمالي المستهدفين:** `{len(target_members)}` عضو"
+                ),
+                color=discord.Color.green() if success > 0 else discord.Color.red()
+            )
+            try:
+                await interaction.followup.send(embed=report_embed, ephemeral=True)
+            except Exception:
+                try:
+                    await interaction.channel.send(f"{interaction.user.mention}", embed=report_embed, delete_after=30)
+                except Exception:
+                    pass
+
+        asyncio.create_task(send_all())
 
 # تعريف القرارات وتصنيفها
 
@@ -668,6 +816,8 @@ ADMIN_DECISIONS = {
     "15": ("📢 تعميم إداري عام", "بيان أو توجيه إداري عام لجميع الأعضاء", False, False, AnnouncementModal),
 
     "16": ("🔔 فاتورة جديدة", "إصدار فاتورة بيع وتوثيق عملية شراء لعميل", True, False, InvoiceModal),
+
+    "17": ("✉️ إرسال خاص لرتبة (DM Role)", "إرسال رسالة في الخاص (DM) لجميع أعضاء رتبة معينة", False, True, RoleDMModal),
 
 }
 
@@ -854,6 +1004,10 @@ class EntitySelectView(View):
         elif need_user:
 
             modal = modal_cls(self.selected_user, panel_message=target_message, image_bytes=self.image_bytes, filename=self.filename)
+
+        elif self.need_role:
+
+            modal = modal_cls(self.selected_role, panel_message=target_message, image_bytes=self.image_bytes, filename=self.filename)
 
         else:
 
@@ -1319,6 +1473,115 @@ class AdminCog(commands.Cog):
 
             )
 
+
+
+
+    @commands.command(name="فاتورة", aliases=["فاتوره", "invoice", "receipt"])
+    async def invoice_quick_command(self, ctx, member: Optional[discord.Member] = None):
+        """أمر مباشر وسريع لإصدار فاتورة متجر لعميل مع إمكانية إرفاق صورة الإثبات"""
+        if not is_admin_member(ctx.author):
+            return await ctx.send("❌ هذا الأمر مخصص فقط لمن يمتلكون صلاحية الإدارة (Administrator).")
+
+        image_bytes = None
+        filename = None
+        if ctx.message.attachments:
+            att = ctx.message.attachments[0]
+            if any(att.filename.lower().endswith(ext) for ext in [".png", ".jpg", ".jpeg", ".gif", ".webp"]):
+                image_bytes = await att.read()
+                filename = att.filename
+
+        try:
+            await ctx.message.delete()
+        except Exception:
+            pass
+
+        if member:
+            view = View(timeout=120)
+            btn = Button(label=f"📝 كتابة بيانات فاتورة {member.display_name}", style=discord.ButtonStyle.danger, emoji="🔔")
+            
+            async def btn_callback(interaction: discord.Interaction):
+                if interaction.user.id != ctx.author.id:
+                    return await interaction.response.send_message("❌ هذا الزر مخصص لمن نفذ الأمر فقط.", ephemeral=True)
+                modal = InvoiceModal(member, panel_message=prompt_msg, image_bytes=image_bytes, filename=filename)
+                await interaction.response.send_modal(modal)
+
+            btn.callback = btn_callback
+            view.add_item(btn)
+            img_note = "\n📸 **تم إرفاق صورة إثبات التحويل بنجاح!**" if image_bytes else "\n💡 *يمكنك إرفاق صورة إثبات التحويل مع أمر _فاتورة لتظهر داخل البطاقة تلقائياً.*"
+            prompt_msg = await ctx.send(f"🔔 **تجهيز فاتورة جديدة للعميل:** {member.mention}{img_note}\nاضغط على الزر لكتابة البيانات:", view=view)
+        else:
+            select_view = EntitySelectView(
+                ctx.author.id, 
+                "16", 
+                need_user=True, 
+                need_role=False, 
+                image_bytes=image_bytes, 
+                filename=filename
+            )
+            img_note = "\n📸 **تم إرفاق صورة إثبات التحويل بنجاح!**" if image_bytes else ""
+            embed = discord.Embed(
+                title="🔔 تجهيز فاتورة جديدة",
+                description=f"👤 **اختر العميل من القائمة بالأسفل، ثم اضغط على زر إكمال البيانات:**{img_note}",
+                color=discord.Color.from_rgb(235, 10, 10)
+            )
+            panel_msg = await ctx.send(embed=embed, view=select_view)
+            select_view.panel_message = panel_msg
+
+
+
+    @commands.command(name="خاص_لرتبة", aliases=["خاص_رتبة", "رسالة_لرتبة", "dm_role", "dmrole", "ارسال_لرتبة"])
+    async def dm_role_command(self, ctx, role: Optional[discord.Role] = None):
+        """أمر سريع لإرسال رسالة خاصة في الـ DM لجميع أعضاء رتبة معينة"""
+        if not is_admin_member(ctx.author):
+            return await ctx.send("❌ هذا الأمر مخصص فقط لمن يمتلكون صلاحية الإدارة (Administrator).")
+
+        image_bytes = None
+        filename = None
+        if ctx.message.attachments:
+            att = ctx.message.attachments[0]
+            if any(att.filename.lower().endswith(ext) for ext in [".png", ".jpg", ".jpeg", ".gif", ".webp"]):
+                image_bytes = await att.read()
+                filename = att.filename
+
+        try:
+            await ctx.message.delete()
+        except Exception:
+            pass
+
+        if role:
+            view = View(timeout=120)
+            btn = Button(label=f"📝 كتابة الرسالة الخاصة لأعضاء {role.name}", style=discord.ButtonStyle.primary, emoji="✉️")
+
+            async def btn_callback(interaction: discord.Interaction):
+                if interaction.user.id != ctx.author.id:
+                    return await interaction.response.send_message("❌ هذا الزر مخصص لمن نفذ الأمر فقط.", ephemeral=True)
+                modal = RoleDMModal(role, panel_message=prompt_msg, image_bytes=image_bytes, filename=filename)
+                await interaction.response.send_modal(modal)
+
+            btn.callback = btn_callback
+            view.add_item(btn)
+            img_note = "\n📸 **تم إرفاق الصورة بنجاح وستُرسل داخل الرسالة الخاصة!**" if image_bytes else ""
+            prompt_msg = await ctx.send(
+                f"✉️ **تجهيز إرسال رسالة خاصة (DM) لأعضاء رتبة:** {role.mention}{img_note}\n"
+                f"اضغط على الزر لكتابة تفاصيل الرسالة:",
+                view=view
+            )
+        else:
+            select_view = EntitySelectView(
+                ctx.author.id, 
+                "17", 
+                need_user=False, 
+                need_role=True, 
+                image_bytes=image_bytes, 
+                filename=filename
+            )
+            embed = discord.Embed(
+                title="✉️ إرسال رسالة خاصة لرتبة (DM Role)",
+                description="🎖️ **اختر الرتبة من القائمة بالأسفل، ثم اضغط على زر إكمال البيانات:**",
+                color=discord.Color.dark_purple()
+            )
+            panel_msg = await ctx.send(embed=embed, view=select_view)
+            select_view.panel_message = panel_msg
 
 
 async def setup(bot):
