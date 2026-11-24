@@ -73,6 +73,8 @@ def _has_glyph(path, ch):
     if ch.isspace():
         return True
     key = (path, ch)
+    if len(_glyph_cache) > 200:
+        _glyph_cache.clear()
     if key in _glyph_cache:
         return _glyph_cache[key]
     f = _load(path, 40)
