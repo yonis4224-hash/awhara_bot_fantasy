@@ -733,9 +733,6 @@ bot.setup_hook = setup_hook
 
 
 
-@bot.event
-
-
 _mem_task_started = False
 async def _memory_cleanup_loop():
     import gc, ctypes
@@ -753,6 +750,7 @@ async def _memory_cleanup_loop():
         except Exception:
             pass
 
+@bot.event
 async def on_ready():
 
     log.info("البوت جاهز: %s (id=%s)", bot.user, bot.user.id)
