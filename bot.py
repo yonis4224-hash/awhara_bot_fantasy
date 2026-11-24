@@ -36,7 +36,7 @@ intents.message_content = True
 
 
 
-bot = commands.Bot(command_prefix=['.', '!', '؟', '_'], intents=intents, help_command=None)
+bot = commands.Bot(command_prefix=['.', '!', '؟', '_'], intents=intents, help_command=None, max_messages=50)
 
 
 
@@ -735,11 +735,33 @@ bot.setup_hook = setup_hook
 
 @bot.event
 
+
+_mem_task_started = False
+async def _memory_cleanup_loop():
+    import gc, ctypes
+    libc = None
+    try:
+        libc = ctypes.CDLL("libc.so.6")
+    except Exception:
+        pass
+    while True:
+        await asyncio.sleep(45)
+        try:
+            gc.collect()
+            if libc is not None:
+                libc.malloc_trim(0)
+        except Exception:
+            pass
+
 async def on_ready():
 
     log.info("البوت جاهز: %s (id=%s)", bot.user, bot.user.id)
 
     await bot.change_presence(activity=discord.Game(name="_اوامر في شات التصنيف"))
+    global _mem_task_started
+    if not _mem_task_started:
+        _mem_task_started = True
+        asyncio.create_task(_memory_cleanup_loop())
 
 
 
