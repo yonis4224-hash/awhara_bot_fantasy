@@ -526,8 +526,6 @@ class RouletteCog(commands.Cog):
 
     @commands.command(name="روليت", aliases=["roulette", "_روليت", "_roulette"])
     async def roulette_cmd(self, ctx):
-        if not self._can_manage_events(ctx):
-            return await ctx.send("❌ للمشرفين فقط.", delete_after=5)
 
         cid = ctx.channel.id
         if self.is_game_active(cid):
