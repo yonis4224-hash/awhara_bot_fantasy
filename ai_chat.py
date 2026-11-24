@@ -26,6 +26,7 @@ GROQ_MODEL = os.getenv("GROQ_MODEL", "allam-2-7b")
 
 MAX_CONTEXT_MESSAGES = 3          # عدد الرسائل السابقة المرسلة كحد أقصى
 MAX_WORDS_LIMIT = 15             # حد أقصى صارم لعدد كلمات الرد (15 كلمة)
+MAX_COMPLETION_TOKENS = 60       # الحد الأقصى لتوكنز الرد
 RELATION_CHANCE = 0.10            # نسبة ظهور معلومات العلاقات (10%)
 RELATION_COOLDOWN_MESSAGES = 8    # لا تظهر العلاقات مجدداً إلا بعد 8 رسائل على الأقل
 MEMORY_UPDATE_INTERVAL = 8        # تحديث الذاكرة الطويلة كل 8 إلى 10 رسائل
