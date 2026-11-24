@@ -11,10 +11,6 @@ from activity_logic import (
     get_user_rank_and_title,
     get_server_leaderboard
 )
-from profile_gfx import (
-    render_profile_card,
-    download_avatar_async
-)
 
 class ProfileCog(commands.Cog):
     def __init__(self, bot):
@@ -46,34 +42,6 @@ class ProfileCog(commands.Cog):
             or p.manage_messages
             or (member.guild and member.id == member.guild.owner_id)
         )
-
-    @commands.command(name="بروفايل", aliases=["بطاقتي", "رتبتي", "id", "profile", "rank", "هويتي"])
-    async def cmd_profile(self, ctx, member: discord.Member = None):
-        """عرض البطاقة التعريفية الحديثة ونقاط التفاعل واللقب"""
-        target = member or ctx.author
-        
-        # إشعار سريع أثناء توليد الصورة
-        async with ctx.typing():
-            # 1. جلب بيانات التفاعل والترتيب واللقب
-            user_data = get_user_rank_and_title(
-                user_id=target.id,
-                username=target.name,
-                display_name=target.display_name
-            )
-
-            # 2. تحديد ما إذا كان العضو إدارياً
-            is_admin = self.is_user_admin(target)
-
-            # 3. تحميل صورة الأفاتار
-            avatar_url = target.display_avatar.url if target.display_avatar else None
-            avatar_img = await download_avatar_async(avatar_url)
-
-            # 4. توليد بطاقة البروفايل بالثيم المناسب
-            card_buf = await asyncio.to_thread(render_profile_card, avatar_img, user_data, is_admin=is_admin)
-            file = discord.File(fp=card_buf, filename="profile_card.png")
-
-            # 5. إرسال البطاقة
-            await ctx.send(file=file)
 
     @commands.command(name="توب", aliases=["المتصدرين", "متصدرين", "top", "leaderboard", "توب_التفاعل"])
     async def cmd_top(self, ctx):
